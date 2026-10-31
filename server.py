@@ -7,6 +7,7 @@ import mimetypes
 import os
 from pathlib import Path
 import secrets
+import socket
 import sys
 import threading
 import time
@@ -111,7 +112,12 @@ def serve(no_browser=False,startup=False,preview=False):
                 if hasattr(e,'diagnostic'):result['diagnostic']=e.diagnostic
                 self.send(500,result)
     class Server(ThreadingHTTPServer):
-        daemon_threads=True;allow_reuse_address=True
+        daemon_threads=True
+        allow_reuse_address=False
+        def server_bind(self):
+            if os.name=='nt' and hasattr(socket,'SO_EXCLUSIVEADDRUSE'):
+                self.socket.setsockopt(socket.SOL_SOCKET,socket.SO_EXCLUSIVEADDRUSE,1)
+            super().server_bind()
     try:server=Server(('127.0.0.1',PORT),Handler)
     except OSError:
         try:
