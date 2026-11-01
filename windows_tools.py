@@ -44,6 +44,59 @@ def diagnostics():
         except Exception as e:result['code_integrity']=str(e)
     return result
 
+def _aemeath_window(title):
+    from ctypes import wintypes as W
+    user=C.WinDLL('user32',use_last_error=True)
+    user.IsWindowVisible.argtypes=[W.HWND];user.IsWindowVisible.restype=W.BOOL
+    user.GetWindowTextLengthW.argtypes=[W.HWND];user.GetWindowTextLengthW.restype=C.c_int
+    user.GetWindowTextW.argtypes=[W.HWND,W.LPWSTR,C.c_int];user.GetWindowTextW.restype=C.c_int
+    callback_type=C.WINFUNCTYPE(W.BOOL,W.HWND,W.LPARAM)
+    user.EnumWindows.argtypes=[callback_type,W.LPARAM];user.EnumWindows.restype=W.BOOL
+    matches=[]
+    @callback_type
+    def collect(hwnd,_):
+        if not user.IsWindowVisible(hwnd):return True
+        length=user.GetWindowTextLengthW(hwnd)
+        if length<=0:return True
+        buffer=C.create_unicode_buffer(length+1)
+        user.GetWindowTextW(hwnd,buffer,len(buffer))
+        if title.casefold() in buffer.value.casefold():matches.append(hwnd);return False
+        return True
+    user.EnumWindows(collect,0)
+    return user,matches[0] if matches else None
+
+def focus_aemeath_window(title):
+    """Focus the existing AEMEATH browser window without changing its size."""
+    if sys.platform!='win32':return False
+    try:
+        from ctypes import wintypes as W
+        user,hwnd=_aemeath_window(title)
+        if not hwnd:return False
+        user.IsIconic.argtypes=[W.HWND];user.IsIconic.restype=W.BOOL
+        user.ShowWindow.argtypes=[W.HWND,C.c_int];user.ShowWindow.restype=W.BOOL
+        user.SetForegroundWindow.argtypes=[W.HWND];user.SetForegroundWindow.restype=W.BOOL
+        if user.IsIconic(hwnd):user.ShowWindow(hwnd,9)
+        return bool(user.SetForegroundWindow(hwnd))
+    except Exception:return False
+
+def refresh_aemeath_window(title):
+    """Focus the existing AEMEATH window and reload its page, preserving its size."""
+    if sys.platform!='win32':return False
+    try:
+        from ctypes import wintypes as W
+        user,hwnd=_aemeath_window(title)
+        if not hwnd:return False
+        user.IsIconic.argtypes=[W.HWND];user.IsIconic.restype=W.BOOL
+        user.ShowWindow.argtypes=[W.HWND,C.c_int];user.ShowWindow.restype=W.BOOL
+        user.SetForegroundWindow.argtypes=[W.HWND];user.SetForegroundWindow.restype=W.BOOL
+        user.keybd_event.argtypes=[C.c_ubyte,C.c_ubyte,C.c_ulong,C.c_size_t]
+        if user.IsIconic(hwnd):user.ShowWindow(hwnd,9)
+        if not user.SetForegroundWindow(hwnd):return False
+        user.keybd_event(0x11,0,0,0);user.keybd_event(0x52,0,0,0)
+        user.keybd_event(0x52,0,2,0);user.keybd_event(0x11,0,2,0)
+        return True
+    except Exception:return False
+
 def virtual_key(code):
     if code.startswith('Key') and len(code)==4:return ord(code[-1])
     if code.startswith('Digit') and len(code)==6:return ord(code[-1])
