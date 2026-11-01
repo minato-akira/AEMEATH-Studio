@@ -6,7 +6,7 @@ import tempfile
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from engine import Engine,DEFAULT,transform_output,render,ORDER
-from driver import Driver,binding,encode_macros,decode_macros
+from driver import Driver,binding,encode_macros,decode_macros,HID
 from protocol import check_report,write_table,query_table
 
 class Tests(unittest.TestCase):
@@ -17,16 +17,17 @@ class Tests(unittest.TestCase):
         self.driver.demo.tables[0x11][:]=bytes(range(56));before=bytes(range(56))
         r=self.driver.change({'operation':'sleep','minutes':10});after=bytes(self.driver.demo.tables[0x11]);expected=bytearray(before);expected[3]=10
         self.assertTrue(r['verified']);self.assertEqual(after,expected)
+        listed={item['name']:item for item in self.driver.backups()};self.assertIn(r['backup'],listed);self.assertIn('睡眠',listed[r['backup']]['description'])
         self.driver.restore(r['backup']);self.assertEqual(self.driver.demo.tables[0x11],before)
     def test_one_key_preserves_all_other_slots(self):
         self.driver.demo.tables[0x12][:]=bytes([42])*512
         r=self.driver.change({'operation':'binding','source':49,'layer':'normal','binding':{'type':'mt','target':4,'hold':224,'delay':400}})
-        expected=bytearray([42]*512);expected[196:200]=bytes([9,4,224,40]);self.assertEqual(self.driver.demo.tables[0x12],expected);self.assertTrue(r['verified'])
+        expected=bytearray([42]*512);expected[196:200]=bytes([9,224,4,40]);self.assertEqual(self.driver.demo.tables[0x12],expected);self.assertTrue(r['verified'])
         with self.assertRaises(ValueError):self.driver.change({'operation':'binding','source':85,'binding':{'type':'default'}})
     def test_24g_table_paging_preserves_data(self):
         self.driver.demo.length=32;self.driver.demo.mode='2.4G'
-        self.driver.change({'operation':'binding','source':34,'layer':'fn','binding':{'type':'shortcut','target':6,'modifiers':[224,225]}})
-        self.assertEqual(self.driver.demo.tables[0x16][136:140],bytes([7,224,225,6]))
+        self.driver.change({'operation':'binding','source':34,'layer':'fn','binding':{'type':'default'}})
+        self.assertEqual(self.driver.demo.tables[0x16][136:140],bytes([2,0,HID[34],0]))
         with self.assertRaises(ValueError):self.driver.change({'operation':'binding','source':1,'layer':'fn','binding':{'type':'default'}})
     def test_macro_roundtrip_and_binding(self):
         macro={'id':3,'actions':[{'delay':10,'keyCode':4,'isPress':True,'actionType':3},{'delay':40,'keyCode':4,'isPress':False,'actionType':3}]}
@@ -40,7 +41,7 @@ class Tests(unittest.TestCase):
         self.driver.change({'operation':'socd','source':49,'peer':51,'mode':3})
         expected=bytes([11,3,4,7]);self.assertEqual(self.driver.demo.tables[0x12][196:200],expected)
         self.driver.change({'operation':'binding','source':49,'binding':{'type':'default'}})
-        self.assertEqual(self.driver.demo.tables[0x12][204:208],bytes(4))
+        self.assertEqual(self.driver.demo.tables[0x12][204:208],bytes([2,0,HID[51],0]))
     def test_native_read_snapshot(self):
         s=self.driver.load();self.assertEqual(s['macroCapacity'],4608);self.assertTrue(s['simulated']);self.assertEqual(len(s['normal']),90)
     def test_bounds_reject_unknown_commands(self):

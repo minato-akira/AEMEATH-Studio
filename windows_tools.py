@@ -5,7 +5,6 @@ from pathlib import Path
 import subprocess
 import sys
 import threading
-import time
 
 RUN_KEY=r'Software\Microsoft\Windows\CurrentVersion\Run';RUN_NAME='AEMEATHResonanceStudio'
 

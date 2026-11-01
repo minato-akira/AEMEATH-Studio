@@ -17,3 +17,162 @@ body[data-theme="星海"] .glass{border-color:#ffffff12}body[data-theme="星海"
 #page-driver .page-intro{padding-top:28px;padding-bottom:22px}#page-driver .page-intro h1{margin:10px 0;font-size:30px}#page-driver .page-intro p{margin:10px 0 18px}.driver-keyboard-panel .section-heading{margin-bottom:8px}
 
 #leisure-content,#native-content,#home-color-panel{margin-top:22px}#master-home{margin-top:20px}#native-content{max-width:900px;margin:22px auto}#native-content select{max-width:600px}#native-content input[type=color],#bg-color{border:1px solid var(--line);border-radius:8px;padding:4px;width:64px;height:40px}#native-apply{display:block;margin-top:24px}#home-color-panel> .info-box{font-size:12px;margin-bottom:25px}#home-color-panel> .info-box strong{font-size:16px}
+
+.aemeath-dialog{border:0;padding:0;background:transparent;color:var(--ink);max-width:min(460px,calc(100vw - 32px));width:100%;overflow:visible}.aemeath-dialog::backdrop{background:rgba(18,24,32,.72);backdrop-filter:blur(5px)}.aemeath-dialog-card{padding:26px 28px 22px;border:1px solid #a8ddea;border-radius:22px;background:linear-gradient(145deg,#f6f9fc,#e9f5f7 52%,#f6ecf4);box-shadow:0 24px 80px #07192366,inset 0 1px #fff;min-width:min(360px,calc(100vw - 48px))}.aemeath-dialog-card h2{font:20px var(--serif);margin:0 0 9px;color:#343e58}.aemeath-dialog-card p{margin:0 0 20px;line-height:1.8;white-space:pre-wrap}.aemeath-dialog-input{width:100%;border:1px solid #a9cbd7;border-radius:10px;background:#ffffffc9;padding:11px 13px;color:var(--ink);margin:-5px 0 18px}.aemeath-dialog-actions{display:flex;justify-content:flex-end;gap:10px}.aemeath-dialog-actions .button{min-width:86px;padding:9px 16px}/* 對話框沿用目前偏好主題，文字使用高對比主文字色。 */
+.aemeath-dialog-card{background:linear-gradient(145deg,var(--glass),var(--bg));border-color:var(--line);color:var(--ink)}
+.aemeath-dialog-card h2,.aemeath-dialog-card p{color:var(--ink)}
+.aemeath-dialog-input{background:var(--bg);border-color:var(--line);color:var(--ink)}
+.aemeath-dialog-input::placeholder{color:var(--muted)}
+body[data-theme="星海"] .aemeath-dialog-card{background:linear-gradient(145deg,#26283c,#1b2032);border-color:#68708e;box-shadow:0 24px 80px #000b,inset 0 1px #ffffff14}
+body[data-theme="像素"] .aemeath-dialog-card{border:2px solid var(--accent);border-radius:4px;box-shadow:6px 6px 0 #30243c55}.driver-key .binding-mark{font-size:7.5px;font-weight:700;fill:#54445d}.driver-key .physical-mark{font-size:6px;fill:#77728a}.driver-key.pending .cap{stroke:#c477a6;stroke-width:2;stroke-dasharray:4 2}.pending-bindings{margin-top:18px;padding-top:12px;border-top:1px solid var(--line)}.pending-bindings .section-heading{align-items:center}.pending-bindings h3{margin:0;font-size:14px}.pending-binding{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:9px 11px;margin:7px 0;border:1px solid var(--line);border-radius:9px;background:var(--glass)}.pending-binding span{color:var(--ink);font-size:12px}/* 放大按鍵設置鍵盤預覽與鍵帽標籤，方便直接辨認綁定。 */
+#page-driver .driver-keyboard-panel{max-width:1500px;margin-left:auto;margin-right:auto}
+#page-driver .driver-keyboard-panel svg{width:100%;max-width:1450px;max-height:none;height:auto}
+#page-driver .driver-key .binding-mark{font-size:9px;font-weight:700}
+#page-driver .driver-key .physical-mark{font-size:6.5px}.driver-key-selection .d-source-search,.driver-key-selection #d-source-filter{display:none}
+#driver-binding-panel .function-categories{float:left;display:flex;flex-direction:column;gap:5px;width:170px;margin:12px 18px 18px 0}
+#driver-binding-panel .function-categories button{width:100%;text-align:left;padding:10px 12px;border:0;border-left:3px solid transparent;background:transparent;color:var(--muted);border-radius:0}
+#driver-binding-panel .function-categories button[aria-selected=true]{color:var(--ink);border-left-color:var(--pink);background:var(--glass)}
+#driver-binding-panel .function-cards{display:flex;gap:9px;flex-wrap:wrap;min-height:54px;padding:12px 0}
+.function-card{border:1px solid var(--line);background:var(--glass);color:var(--ink);border-radius:10px;padding:10px 14px;font-size:12px}
+.function-card.active{border-color:var(--pink);background:color-mix(in srgb,var(--pink) 16%,var(--glass));box-shadow:0 0 0 1px var(--pink)}
+.target-pickers{display:flex;gap:8px;flex-wrap:wrap}.driver-key.pending .cap{stroke:#c477a6;stroke-dasharray:4 2}.driver-key.target-picked .cap{stroke:#63a8d0;stroke-width:2.5}.driver-keyboard-panel svg.picking-target{cursor:crosshair}.driver-keyboard-panel svg.picking-target .driver-key:not(.locked) .cap{stroke:#66aeca;stroke-width:2;stroke-dasharray:3 2}
+/* 按鍵設定：左側分類，右側卡片選取，鍵盤預覽保持寬大可點。 */
+#page-driver{display:grid;grid-template-columns:minmax(165px,205px) minmax(0,1fr);column-gap:22px;align-items:start}
+#page-driver>.page-intro,#page-driver>.driver-keyboard-panel{grid-column:1/-1;width:100%;max-width:none}
+#page-driver>.driver-tabs{grid-column:1;grid-row:3;display:flex;flex-direction:column;gap:4px;align-self:stretch;position:sticky;top:16px;margin:0;padding:8px 0;border:1px solid var(--line);border-radius:12px;background:var(--glass);overflow:hidden}
+#page-driver>.driver-tabs button{display:flex;align-items:center;gap:12px;width:100%;min-height:46px;padding:10px 14px;text-align:left;border:0;border-left:3px solid transparent;border-radius:0;background:transparent;color:var(--muted);font-size:13px}
+#page-driver>.driver-tabs button span{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--bg);font-size:15px}
+#page-driver>.driver-tabs button[aria-selected=true]{border-left-color:var(--pink);background:color-mix(in srgb,var(--pink) 13%,var(--glass));color:var(--ink)}
+#page-driver>.driver-tabs button[aria-selected=true] span{background:color-mix(in srgb,var(--pink) 22%,var(--bg));color:var(--pink)}
+#page-driver>.driver-panels{grid-column:2;grid-row:3;min-width:0;max-width:none;width:100%;margin:0}
+#page-driver .driver-panel{min-width:0;padding:24px 28px}
+#page-driver .driver-keyboard-panel{padding:20px 24px}
+#page-driver .driver-keyboard-panel svg{width:100%;max-width:1600px;max-height:none;height:auto}
+#page-driver .driver-key .binding-mark{font-size:10px;font-weight:700}
+#page-driver .driver-key .physical-mark{font-size:7px}
+#page-driver .driver-layer-picks{display:flex;gap:5px;padding:3px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}
+#page-driver .driver-layer-picks button{min-width:52px;padding:5px 10px;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+#page-driver .driver-layer-picks button.active{background:var(--glass);color:var(--ink);box-shadow:0 1px 5px #0002}
+#driver-binding-panel .function-categories{float:none;display:flex;flex-direction:row;gap:7px;width:auto;margin:12px 0 16px;padding-bottom:10px;border-bottom:1px solid var(--line);overflow-x:auto}
+#driver-binding-panel .function-categories button{flex:0 0 auto;width:auto;padding:7px 12px;border:1px solid transparent;border-radius:8px;background:transparent;text-align:center;color:var(--muted)}
+#driver-binding-panel .function-categories button[aria-selected=true]{border-color:var(--line);background:var(--glass);color:var(--ink)}
+#driver-binding-panel .function-cards,#driver-binding-panel .choice-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(124px,1fr));gap:10px;min-height:0;padding:6px 0 14px}
+#driver-binding-panel .function-card{display:flex;min-height:100px;flex-direction:column;align-items:flex-start;justify-content:space-between;gap:10px;padding:12px;text-align:left;border-radius:11px;background:var(--glass);transition:border-color .16s,background .16s,transform .16s}
+#driver-binding-panel .function-card-art{display:grid;place-items:center;width:42px;height:42px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--pink) 10%,var(--bg));color:var(--pink);font-size:21px;font-weight:600}
+#driver-binding-panel .function-card-label{font-size:12px;line-height:1.45;color:var(--ink)}
+#driver-binding-panel .function-card.active{border-color:var(--pink);background:color-mix(in srgb,var(--pink) 12%,var(--glass));box-shadow:0 0 0 1px color-mix(in srgb,var(--pink) 50%,transparent)}
+#driver-binding-panel .function-card:focus-visible{outline:2px solid var(--pink);outline-offset:2px}
+#driver-binding-panel .target-pickers{margin:8px 0}
+#driver-binding-panel .target-pickers .button{min-height:40px}
+#driver-binding-panel .choice-cards{max-width:760px}
+#driver-binding-panel .modifier-checks{display:flex;flex-wrap:wrap;gap:8px}
+#driver-binding-panel .modifier-checks label{padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--glass)}
+body[data-theme="星海"] #page-driver>.driver-tabs{background:#212237;border-color:#474560}
+body[data-theme="星海"] #page-driver>.driver-tabs button span{background:#302e46}
+body[data-theme="像素"] #page-driver>.driver-tabs{border-radius:3px}
+@media(max-width:900px){#page-driver{grid-template-columns:150px minmax(0,1fr);column-gap:14px}#page-driver .driver-panel{padding:18px}#driver-binding-panel .function-cards,#driver-binding-panel .choice-cards{grid-template-columns:repeat(auto-fill,minmax(105px,1fr))}#page-driver .driver-keyboard-panel{padding:14px}}
+@media(max-width:680px){#page-driver{display:block}#page-driver>.driver-tabs{position:static;flex-direction:row;overflow-x:auto;margin-bottom:14px}#page-driver>.driver-tabs button{flex:0 0 auto;width:auto;min-width:max-content;border-left:0;border-bottom:3px solid transparent}#page-driver>.driver-tabs button[aria-selected=true]{border-bottom-color:var(--pink)}#page-driver>.driver-panels{width:100%}#driver-binding-panel .function-categories{max-width:100%}}
+#page-driver .driver-keyboard-panel svg.picking-target .driver-key.target-eligible .cap{stroke:#66aeca;stroke-width:2;stroke-dasharray:3 2;opacity:1}
+
+/* 宏編輯採用工具側欄與事件時間軸，並清楚區分按下／放開。 */
+#driver-macro-panel .macro-editor-layout{display:grid;grid-template-columns:minmax(210px,270px) minmax(0,1fr);gap:18px;align-items:start;margin-top:16px;max-width:none!important}
+#driver-macro-panel .macro-composer{display:flex;flex-direction:column;gap:10px;padding:15px;border:1px solid var(--line);border-radius:12px;background:var(--glass)}
+#driver-macro-panel .macro-composer .macro-toolbar{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:0}
+#driver-macro-panel .macro-composer .field-label{margin:5px 0 0}
+#driver-macro-panel .macro-composer input{width:100%;max-width:none}
+#driver-macro-panel .macro-composer #macro-add{margin-top:5px}
+#driver-macro-panel .macro-timeline{min-width:0;border:1px solid var(--line);border-radius:12px;background:var(--glass);overflow:hidden}
+#driver-macro-panel .macro-timeline-head{display:flex;justify-content:space-between;align-items:center;padding:12px 15px;border-bottom:1px solid var(--line);color:var(--ink)}
+#driver-macro-panel .macro-timeline-head span{color:var(--muted);font-size:11px}
+#driver-macro-panel .macro-actions{height:380px;margin:0;border:0;border-radius:0;background:var(--bg);padding:4px 0}
+#driver-macro-panel .macro-row{grid-template-columns:48px minmax(120px,1fr) 100px 34px;gap:10px;min-height:48px;padding:6px 12px;font-size:12px}
+#driver-macro-panel .macro-row.press{background:color-mix(in srgb,#39cf31 13%,var(--bg))}
+#driver-macro-panel .macro-row.release{background:color-mix(in srgb,var(--pink) 8%,var(--bg))}
+#driver-macro-panel .macro-step{font:11px ui-monospace,monospace;color:var(--muted)}
+#driver-macro-panel .macro-action-label{font-size:13px;color:var(--ink)}
+#driver-macro-panel .macro-row.press .macro-action-label{color:#36b84a}
+#driver-macro-panel .macro-row.release .macro-action-label{color:var(--pink)}
+#driver-macro-panel .macro-summary{padding:0 14px;font-size:11px}
+#driver-macro-panel #macro-key-name{border-color:var(--line)}
+#driver-binding-panel #d-target-name,#driver-binding-panel #d-hold-name,#driver-binding-panel #d-peer-name{max-width:380px;margin:4px 0 12px}
+#driver-binding-panel .target-pickers{display:none}
+@media(max-width:780px){#driver-macro-panel .macro-editor-layout{grid-template-columns:1fr}#driver-macro-panel .macro-composer{display:grid;grid-template-columns:1fr 1fr}#driver-macro-panel .macro-composer .macro-toolbar,#driver-macro-panel .macro-composer #macro-add,#driver-macro-panel .macro-composer #macro-record-note{grid-column:1/-1}}
+/* 目標鍵透過實體鍵盤捕捉；映射預覽只呈現目前生效功能。 */
+#driver-binding-panel .key-capture-button{display:block;min-width:220px;margin:5px 0 10px;text-align:left}
+#driver-binding-panel .function-help{margin:14px 0;line-height:1.75;border-left:3px solid var(--pink)}
+#page-driver .driver-key.pending .cap{stroke:#bc6ca9;stroke-width:3;stroke-dasharray:none;filter:drop-shadow(0 0 3px #cb80b866)}
+#page-driver .driver-key.pending .binding-mark{fill:#a24587;font-weight:800}
+#page-driver .driver-key.chosen.pending .cap{stroke:#7844a0;stroke-width:4}
+body[data-theme="星海"] #page-driver .driver-key.pending .binding-mark{fill:#f0aee0}#page-driver .driver-key.remapped .cap{fill:#ead6ec;stroke:#bd7eaf;stroke-width:1.8}
+#page-driver .driver-key.remapped .binding-mark{fill:#8b4d83}
+#page-driver .driver-key.pending .cap{fill:#dec5e7;stroke:#a34e9d;stroke-width:3;filter:brightness(1.08) drop-shadow(0 0 4px #bd73bb88)}
+#page-driver .driver-key.pending .binding-mark{fill:#71366f}
+body[data-theme="星海"] #page-driver .driver-key.remapped .cap{fill:#51405f;stroke:#c997d1}
+body[data-theme="星海"] #page-driver .driver-key.pending .cap{fill:#654675;stroke:#f0a2dc;filter:brightness(1.2) drop-shadow(0 0 5px #e285d799)}
+body[data-theme="星海"] #page-driver .driver-key.remapped .binding-mark,body[data-theme="星海"] #page-driver .driver-key.pending .binding-mark{fill:#ffe0fa}#page-driver .driver-key .binding-mark{font-size:13px;font-weight:700}
+#page-driver .driver-key .physical-mark{font-size:6px}#page-driver .driver-key .binding-mark{font-size:13px;font-weight:700}#driver-binding-panel .function-help:empty{display:none!important}#page-driver .driver-key.changed-this-session .cap{fill:#ead6ec;stroke:#bd7eaf;stroke-width:2.6;filter:brightness(1.12) drop-shadow(0 0 3px #bd73bb66)}
+#page-driver .driver-key.changed-this-session .binding-mark{fill:#8b4d83;font-weight:800}
+body[data-theme="星海"] #page-driver .driver-key.changed-this-session .cap{fill:#51405f;stroke:#e09bd7;filter:brightness(1.2) drop-shadow(0 0 5px #e285d799)}
+body[data-theme="星海"] #page-driver .driver-key.changed-this-session .binding-mark{fill:#ffe0fa}
+
+/* 按鍵預覽：選取狀態用藍青描邊，修改狀態維持紫色填色；窄版層切換不可溢出。 */
+#page-driver .driver-key.chosen .cap{fill:#dff4fb;stroke:#348daf;stroke-width:3;filter:drop-shadow(0 0 3px #55b8d688)}
+#page-driver .driver-key.chosen .binding-mark{fill:#286d86}
+#page-driver .driver-key.chosen.remapped .cap,#page-driver .driver-key.chosen.changed-this-session .cap,#page-driver .driver-key.chosen.pending .cap{fill:#ead6ec;stroke:#348daf;stroke-width:3.5;stroke-dasharray:none;filter:drop-shadow(0 0 4px #55b8d688)}
+#page-driver .driver-key.chosen.remapped .binding-mark,#page-driver .driver-key.chosen.changed-this-session .binding-mark,#page-driver .driver-key.chosen.pending .binding-mark{fill:#8b4d83}
+body[data-theme="星海"] #page-driver .driver-key.chosen .cap{fill:#25485b;stroke:#63c8e8;filter:drop-shadow(0 0 4px #63c8e888)}
+body[data-theme="星海"] #page-driver .driver-key.chosen.remapped .cap,body[data-theme="星海"] #page-driver .driver-key.chosen.changed-this-session .cap,body[data-theme="星海"] #page-driver .driver-key.chosen.pending .cap{fill:#51405f;stroke:#63c8e8;filter:drop-shadow(0 0 5px #63c8e888)}
+body[data-theme="星海"] #page-driver .driver-key.chosen .binding-mark{fill:#d7f4ff}
+#page-driver .driver-keyboard-panel .section-heading{min-width:0;flex-wrap:wrap;align-items:flex-start}
+#page-driver .driver-keyboard-panel .section-heading>div:first-child{min-width:0}
+#page-driver .driver-keyboard-panel .driver-layer{box-sizing:border-box;flex:0 1 150px;min-width:0;max-width:100%;margin-left:auto}
+#page-driver .driver-keyboard-panel .driver-layer-picks{box-sizing:border-box;width:100%;max-width:100%;gap:3px}
+#page-driver .driver-keyboard-panel .driver-layer-picks button{box-sizing:border-box;flex:1 1 0;min-width:0;padding:5px 6px;white-space:nowrap}
+.disconnect{position:fixed;left:50%;right:auto;top:auto;bottom:14px;inset:auto auto 14px 50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:10px 18px;max-width:min(92vw,480px);border:1px solid #ffffff30;border-radius:12px;background:#252136ed;backdrop-filter:blur(14px);z-index:19;color:white;box-shadow:0 8px 28px #0003;pointer-events:none;text-align:center}.disconnect strong{font:14px var(--sans)}.disconnect p{margin:0;color:#d1c6d8;font-size:10px}
+#driver-binding-panel .function-cards.advanced-function-cards{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
+#driver-binding-panel .function-cards.advanced-function-cards .function-card{justify-content:flex-start;min-height:150px}
+#driver-binding-panel .function-card-description{color:var(--muted);font-size:10px;line-height:1.55}
+/* 高級鍵管理清單：顯示現有映射，檢視與移除沿用待寫入驗證流程。 */
+#driver-binding-panel .advanced-config-list{margin:12px 0 18px;padding:14px;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--glass) 72%,var(--bg))}
+#driver-binding-panel .advanced-config-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:10px}
+#driver-binding-panel .advanced-config-heading h3{display:flex;align-items:center;gap:9px;margin:0 0 4px;font-size:14px}
+#driver-binding-panel .advanced-config-heading .field-note{margin:0;font-size:10px}
+#driver-binding-panel #advanced-config-add{flex:0 0 auto;padding:8px 12px;font-size:11px}
+#driver-binding-panel .advanced-config-items{display:grid;gap:7px;max-height:320px;overflow:auto}
+#driver-binding-panel .advanced-config-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}
+#driver-binding-panel .advanced-config-row.selected{border-color:var(--pink);box-shadow:0 0 0 1px color-mix(in srgb,var(--pink) 45%,transparent)}
+#driver-binding-panel .advanced-config-details{display:grid;gap:3px;min-width:0}
+#driver-binding-panel .advanced-config-details strong{font-size:11px;color:var(--ink)}
+#driver-binding-panel .advanced-config-details span{font-size:10px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+#driver-binding-panel .advanced-config-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+#driver-binding-panel .advanced-config-actions .button{padding:6px 10px;font-size:10px}
+#driver-binding-panel .advanced-config-remove{padding:6px 8px;color:var(--danger,#bf5266);font-size:10px}
+#driver-binding-panel .advanced-config-remove:disabled{opacity:.55;cursor:default}
+#driver-binding-panel .advanced-config-empty{margin:0;padding:14px;border:1px dashed var(--line);border-radius:9px;color:var(--muted);font-size:11px;text-align:center}
+@media(max-width:560px){#driver-binding-panel .advanced-config-heading{flex-direction:column}#driver-binding-panel .advanced-config-row{align-items:flex-start;flex-direction:column}#driver-binding-panel .advanced-config-actions{width:100%;justify-content:flex-end}}
+#driver-binding-panel .macro-binding-options{display:grid;grid-template-columns:minmax(180px,1fr) minmax(290px,1.25fr);gap:18px;align-items:start;max-width:900px}
+#driver-binding-panel .macro-binding-select select{width:100%;max-width:none}
+#driver-binding-panel .macro-binding-mode .choice-cards{grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;max-width:none;padding:6px 0}
+#driver-binding-panel .macro-binding-mode .function-card{min-height:58px;align-items:center;justify-content:center;gap:5px;padding:7px;text-align:center}
+#driver-binding-panel .macro-binding-mode .function-card-art{width:27px;height:27px;border-radius:7px;font-size:14px}
+#driver-binding-panel #d-repeat-field{margin-top:7px}
+@media(max-width:900px){#driver-binding-panel .macro-binding-options{grid-template-columns:1fr}}
+
+/* 宏動作插入與時間軸拖曳排序。 */
+#driver-macro-panel .macro-composer-title{margin:0 0 2px;font-size:15px}
+#driver-macro-panel .macro-input-types{display:grid;gap:8px;padding:4px 0}
+#driver-macro-panel .macro-input-types label{display:flex;align-items:center;gap:9px;margin:0;padding:10px 11px;border:1px solid var(--line);border-radius:8px;cursor:pointer;color:var(--ink)}
+#driver-macro-panel .macro-input-types input{width:auto;margin:0;accent-color:var(--pink)}
+#driver-macro-panel .macro-input-types label:has(input:checked){border-color:var(--pink);background:color-mix(in srgb,var(--pink) 10%,var(--glass))}
+#driver-macro-panel #macro-keyboard-input,#driver-macro-panel #macro-mouse-input{display:grid;gap:5px}
+#driver-macro-panel #macro-key-status{margin:0;min-height:2.6em}
+#driver-macro-panel #macro-mouse-button{width:100%;max-width:none}
+#driver-macro-panel .macro-delay-setting{display:grid;grid-template-columns:1fr 95px;gap:10px;align-items:center}
+#driver-macro-panel .macro-delay-setting .field-label{margin:0}
+#driver-macro-panel .macro-delay-setting input{max-width:none;text-align:center}
+#driver-macro-panel .macro-row.mouse-action.press .macro-action-label{color:#e09a39}#driver-macro-panel .macro-row[draggable="true"]{cursor:grab}
+#driver-macro-panel .macro-row.dragging{opacity:.4}
+#driver-macro-panel .macro-row.drag-over{outline:2px solid var(--pink);outline-offset:-2px}
+#driver-macro-panel .macro-row.delay-action{background:color-mix(in srgb,#64a8d8 12%,var(--bg))}
+#driver-macro-panel .macro-row.delay-action .macro-action-label{color:#65a8d9}
+#driver-macro-panel .macro-pair-note{margin:0;line-height:1.55}

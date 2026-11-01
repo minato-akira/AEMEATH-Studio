@@ -49,6 +49,7 @@ def validate(cfg):
         if len(bg)!=7 or bg[0]!='#':raise ValueError('背景顏色無效')
         finite(g.setdefault('background_brightness',0),0,1)
         finite(g.get('brightness'),0,1);finite(g.get('speed'),.1,5);finite(g.setdefault('bpm',72),15,180)
+        finite(g.setdefault('wave_width',.35),.05,1)
     s=copy.deepcopy(SETTINGS);s.update(result.get('settings',{}))
     for key in ('autostart','start_hidden','auto_effects','reconnect','motion','global_keys','hardware_master'):
         if type(s[key])is not bool:raise ValueError('設定需為開關值')
@@ -121,7 +122,9 @@ def render(cfg,t,events=(),identify=None):
             phase=t*g['speed'];level=g['brightness']*cfg['settings']['master'];color=rgb
             if effect=='呼吸':level*=.5-.5*math.cos(phase*math.tau)
             elif effect=='彩虹':color=tuple(int(x*255+.5) for x in colorsys.hsv_to_rgb((phase*.2+index/max(1,len(g['keys'])))%1,1,1))
-            elif effect=='波浪':level*=(.5+.5*math.sin(phase*math.tau-POSITIONS[k][0]*.55))**2
+            elif effect=='波浪':
+                wave=((phase*.2-POSITIONS[k][0]*.08+.5)%1)-.5
+                level*=max(0,1-abs(wave)/max(.025,g.get('wave_width',.35)/2))**2
             elif effect=='閃爍':level*=int(phase*2)%2
             elif effect=='心跳':level*=heartbeat(t,g['bpm'])
             elif effect=='核心資料流':
@@ -219,11 +222,49 @@ class Engine:
                 cfg=json.loads(p.read_text(encoding='utf-8'))
                 if 'settings' not in cfg:cfg['settings']=copy.deepcopy(SETTINGS)
                 self.config=validate(cfg)
-        except Exception as e:self.error='舊設定讀取失敗，改用預設：'+str(e)
+        except Exception as e:
+            backup=self.data/'config.json.backup'
+            try:
+                cfg=json.loads(backup.read_text(encoding='utf-8'))
+                if 'settings' not in cfg:cfg['settings']=copy.deepcopy(SETTINGS)
+                self.config=validate(cfg)
+                logging.exception('設定檔讀取或驗證失敗，已從備份恢復')
+                self.error='設定檔讀取失敗，已從備份恢復：'+str(e)
+            except Exception:
+                logging.exception('設定檔及備份讀取或驗證失敗，改用預設設定')
+                self.error='舊設定讀取失敗，改用預設：'+str(e)
     def save(self,cfg):
         valid=validate(cfg)
         with self.lock:
-            tmp=self.data/'config.tmp';tmp.write_text(json.dumps(valid,ensure_ascii=False,indent=2),encoding='utf-8');tmp.replace(self.data/'config.json');self.config=valid
+            target=self.data/'config.json';tmp=self.data/'config.tmp';backup=self.data/'config.json.backup';payload=json.dumps(valid,ensure_ascii=False,indent=2)
+            tmp.write_text(payload,encoding='utf-8')
+            try:
+                tmp.replace(target)
+            except PermissionError as replace_error:
+                previous=None
+                if target.exists():
+                    try:previous=target.read_bytes()
+                    except OSError as backup_error:raise OSError(f'Windows 拒絕替換設定，且無法讀取舊設定建立備份：{backup_error}') from replace_error
+                    try:
+                        with backup.open('wb') as stream:
+                            stream.write(previous);stream.flush();os.fsync(stream.fileno())
+                    except OSError as backup_error:raise OSError(f'Windows 拒絕替換設定，且無法建立舊設定備份：{backup_error}') from replace_error
+                try:
+                    with target.open('w',encoding='utf-8',newline='\n') as stream:
+                        stream.write(payload);stream.flush();os.fsync(stream.fileno())
+                except OSError as write_error:
+                    if previous is not None:
+                        try:
+                            with target.open('wb') as stream:
+                                stream.write(previous);stream.flush();os.fsync(stream.fileno())
+                        except OSError as restore_error:
+                            raise OSError(f'設定寫回失敗，且無法復原；舊設定備份保留於 {backup.name}。復原錯誤：{restore_error}') from write_error
+                    raise OSError(f'Windows 拒絕替換設定，安全寫回也失敗：{write_error}') from replace_error
+                logging.warning('設定檔原子替換遭拒，已安全備份並改用同步寫回：%s',backup if previous is not None else target)
+            finally:
+                try:tmp.unlink(missing_ok=True)
+                except OSError:logging.warning('無法移除暫存設定檔：%s',tmp,exc_info=True)
+            self.config=valid
         return valid
     def press(self,key):
         if type(key)is not int or key not in IDS:raise ValueError('未知按鍵')

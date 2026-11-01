@@ -10,7 +10,7 @@ function render(config,keys,t,events=[],identify=null){
  g.keys.forEach((k,index)=>{let phase=t*g.speed,level=g.brightness*config.settings.master,color=rgb;const effect=g.effect;
  if(effect==='呼吸')level*=.5-.5*Math.cos(phase*Math.PI*2);
  else if(effect==='彩虹')color=hsv(((phase*.2+index/Math.max(1,g.keys.length))%1+1)%1);
- else if(effect==='波浪')level*=(.5+.5*Math.sin(phase*Math.PI*2-positions.get(k)[0]*.55))**2;
+ else if(effect==='波浪'){const wave=(((phase*.2-positions.get(k)[0]*.08+.5)%1+1)%1)-.5;level*=Math.max(0,1-Math.abs(wave)/Math.max(.025,(g.wave_width??.35)/2))**2;}
  else if(effect==='閃爍')level*=Math.floor(phase*2)%2;
  else if(effect==='心跳')level*=beat(t,g.bpm);
  else if(effect==='核心資料流')level*=dataflowLevel(...positions.get(k),t,g.speed);

@@ -1,5 +1,6 @@
 """內建燈效單次寫入；讀回等待收斂，永不自動重送設定。"""
 import copy,json,time,uuid
+import logging
 from protocol import header
 
 def validate_native(v):
@@ -21,6 +22,8 @@ class NativeLightingError(OSError):
 
 def apply_native(driver,value):
     v=copy.deepcopy(validate_native(value));driver.engine.stop()
+    log=logging.getLogger('aemeath.native_lighting')
+    log.info('開始套用內建燈效 preview=%s mode=%s brightness=%s',driver.preview,v['mode'],v['brightness'])
     folder=driver.engine.data/'lighting-backups';folder.mkdir(exist_ok=True)
     name=time.strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex[:8]+'.json'
     record=dict(kind='native-lighting',simulated=driver.preview,requested=v,stage='read-before',reads=[],writes=0)
@@ -47,7 +50,10 @@ def apply_native(driver,value):
             # 僅重讀，不重送 0x23；避免非同步載入時把舊狀態當成最終狀態。
             for delay in (.12,.2,.35,.6):
                 time.sleep(delay);actual=read();record['reads'].append(actual.hex())
-                diffs=[dict(field=FIELDS[i],requested=payload[i],actual=actual[i]) for i in FIELDS if actual[i]!=payload[i]]
+                # GET13 的 RGB 是執行狀態回報，裝置會回傳 FF，不能驗證寫入顏色。
+                # 顏色差異留在診斷記錄中，其餘可靠欄位仍須完全符合。
+                diffs=[dict(field=FIELDS[i],requested=payload[i],actual=actual[i]) for i in FIELDS if i not in (1,2,3) and actual[i]!=payload[i]]
+                record['color_readback']={'requested':list(payload[1:4]),'actual':list(actual[1:4]),'verified':False}
                 record['differences']=diffs;record['actual']={name:actual[i] for i,name in FIELDS.items()}
                 save()
                 if not diffs:break
@@ -56,8 +62,9 @@ def apply_native(driver,value):
                 raise OSError('內建燈效讀回未通過：'+detail+'。未自動重寫，請下載診斷記錄。')
             cfg=driver.engine.snapshot()['config'];cfg['active_mode']='native';cfg['native_lighting']=dict(v);driver.engine.save(cfg)
             record['stage']='verified';record['ok']=True;save()
-        driver.engine.status=f"內建燈效 · 亮度 {v['brightness']}/5 已讀回驗證，停止持續傳送"
-        return dict(ok=True,simulated=driver.preview,actual=record['actual'])
+        driver.engine.status=f"內建燈效 · 亮度 {v['brightness']}/5 已確認；顏色讀回不提供驗證，停止持續傳送"
+        return dict(ok=True,simulated=driver.preview,actual=record['actual'],color_verified=False)
     except Exception as exc:
+        log.exception('內建燈效套用失敗 stage=%s writes=%s',record.get('stage'),record.get('writes'))
         record.update(ok=False,error=str(exc));save()
         raise NativeLightingError(str(exc),record) from exc

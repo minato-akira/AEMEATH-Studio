@@ -68,5 +68,5 @@ class NativeTests(unittest.TestCase):
      apply_native(driver,dict(mode=1,color='#66D2FF',brightness=1,speed=3,direction=0,colorMode=0))
    self.assertIn('亮度：要求 1、讀回 5',str(error.exception));self.assertEqual(calls.count(0x23),1)
    self.assertEqual(e.config.get('active_mode','leisure'),'leisure')
-   record=__import__('json').loads((Path(folder)/'lighting-backups/latest-native.json').read_text())
+   record=__import__('json').loads((Path(folder)/'lighting-backups/latest-native.json').read_text(encoding='utf-8'))
    self.assertFalse(record['ok']);self.assertEqual(record['actual']['brightness'],5)

@@ -23,7 +23,9 @@ PORT=47635
 
 def serve(no_browser=False,startup=False,preview=False):
     DATA.mkdir(parents=True,exist_ok=True)
-    logging.basicConfig(handlers=[RotatingFileHandler(DATA/'studio.log',maxBytes=600000,backupCount=2,encoding='utf-8')],level=logging.INFO,format='%(asctime)s %(levelname)s %(message)s')
+    log_dir=BASE/'logs';log_dir.mkdir(parents=True,exist_ok=True)
+    logging.basicConfig(handlers=[RotatingFileHandler(log_dir/'studio.log',maxBytes=600000,backupCount=2,encoding='utf-8')],level=logging.INFO,format='%(asctime)s %(levelname)s %(name)s %(message)s')
+    log=logging.getLogger('aemeath.server')
     token=secrets.token_urlsafe(32);engine=Engine();closing=threading.Event();url=f'http://127.0.0.1:{PORT}/'
     runtime=DATA/'runtime.json';web=BASE/'web'
     if preview:
@@ -37,7 +39,8 @@ def serve(no_browser=False,startup=False,preview=False):
     tray=Tray(show,engine.stop,quit_app,BASE/'app.ico')
     class Handler(BaseHTTPRequestHandler):
         protocol_version='HTTP/1.1'
-        def log_message(self,*args):pass
+        def log_message(self,format,*args):
+            log.info('HTTP '+format,*args)
         def valid_host(self):return self.headers.get('Host')==f'127.0.0.1:{PORT}'
         def send(self,status,data,mime='application/json; charset=utf-8'):
             if not isinstance(data,bytes):data=json.dumps(data,ensure_ascii=False).encode('utf-8')
@@ -63,6 +66,7 @@ def serve(no_browser=False,startup=False,preview=False):
             if name.endswith('.js'):mime='application/javascript'
             self.send(200,data,mime+('; charset=utf-8' if mime.startswith('text/') or name.endswith('.js') else ''))
         def do_POST(self):
+            path=urllib.parse.urlsplit(self.path).path
             if not self.authorized():self.send(403,{'error':'Token denied'});return
             origin=self.headers.get('Origin')
             if origin and origin!=url.rstrip('/'):self.send(403,{'error':'Origin denied'});return
@@ -70,7 +74,7 @@ def serve(no_browser=False,startup=False,preview=False):
             try:
                 size=int(self.headers.get('Content-Length','0'))
                 if not 0<size<=2000000:raise ValueError('請求大小無效')
-                body=json.loads(self.rfile.read(size));path=urllib.parse.urlsplit(self.path).path
+                body=json.loads(self.rfile.read(size))
                 if path=='/api/native-diagnostic':
                     p=engine.data/'lighting-backups'/'latest-native.json'
                     self.send(200,json.loads(p.read_text(encoding='utf-8')) if p.exists() else {'error':'尚無內建燈效操作記錄'})
@@ -106,9 +110,11 @@ def serve(no_browser=False,startup=False,preview=False):
                     report=diagnostics();state=engine.snapshot();report['lighting']={key:state[key] for key in ('status','error','connection','fps','sent','acks')};self.send(200,report)
                 elif path=='/api/quit':self.send(200,{'ok':True});closing.set()
                 else:self.send(404,{})
-            except (ValueError,KeyError,TypeError) as e:self.send(400,{'error':str(e)})
+            except (ValueError,KeyError,TypeError) as e:
+                log.warning('API 請求拒絕 path=%s reason=%s',path,str(e))
+                self.send(400,{'error':str(e)})
             except Exception as e:
-                logging.exception('API failed');result={'error':str(e)}
+                log.exception('API 執行失敗 path=%s',path);result={'error':str(e)}
                 if hasattr(e,'diagnostic'):result['diagnostic']=e.diagnostic
                 self.send(500,result)
     class Server(ThreadingHTTPServer):
@@ -128,6 +134,7 @@ def serve(no_browser=False,startup=False,preview=False):
             return
         except Exception:raise OSError(f'連接埠 {PORT} 被其他程式佔用；請先結束舊版或稍後再開啟')
     runtime.write_text(json.dumps({'token':token,'pid':os.getpid()}),encoding='utf-8')
+    log.info('應用程式啟動 preview=%s startup=%s port=%s',preview,startup,PORT)
     threading.Thread(target=server.serve_forever,daemon=True).start();tray.start()
     threading.Thread(target=global_key_loop,args=(engine,KEYS,closing),daemon=True).start()
     if startup and engine.config['settings']['auto_effects']:engine.start()
@@ -142,6 +149,7 @@ def serve(no_browser=False,startup=False,preview=False):
         while not closing.wait(.5):pass
     except KeyboardInterrupt:pass
     finally:
+        log.info('應用程式結束')
         engine.stop();tray.stop();server.shutdown();server.server_close()
         try:runtime.unlink()
         except OSError:pass

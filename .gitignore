@@ -5,6 +5,7 @@ venv/
 .env
 .env.*
 lighting-backups/
+logs/
 backups/
 *.log
 .DS_Store
