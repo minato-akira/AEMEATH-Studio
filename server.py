@@ -34,17 +34,34 @@ def _port_available(host,port):
     finally:sock.close()
 
 def _running_instance(runtime,url):
+    # Discovery exposes identity only; the token stays in the running package.
+    # Read that package's receipt locally, then require an authenticated response.
+    identity=None
+    try:
+        with urllib.request.urlopen(url+'api/instance',timeout=1.5) as response:
+            candidate=json.load(response)
+        if (isinstance(candidate,dict) and candidate.get('app')=='AEMEATH-Studio'
+                and type(candidate.get('pid')) is int and candidate['pid']>0
+                and isinstance(candidate.get('base_path'),str)
+                and Path(candidate['base_path']).is_absolute()):
+            identity=candidate
+            runtime=Path(candidate['base_path'])/'data'/'runtime.json'
+    except (OSError,ValueError):pass
     try:info=json.loads(runtime.read_text(encoding='utf-8'))
     except (OSError,ValueError):return None
     if not isinstance(info,dict):return None
+    if identity and any(info.get(k)!=identity.get(k) for k in ('pid','version','build_id','base_path')):return None
     token=info.get('token')
     if not isinstance(token,str) or not token:return None
     try:
         req=urllib.request.Request(url+'api/state',headers={'X-Aemeath-Token':token})
         with urllib.request.urlopen(req,timeout=1.5) as response:state=json.load(response)
-        info['_ui_active']=bool(state.get('ui_active',False)) if isinstance(state,dict) else False
+        if not isinstance(state,dict):return None
+        if identity and state.get('instance')!=identity:return None
+        info['_ui_active']=bool(state.get('ui_active',False))
         return info
-    except Exception:return None
+    except (OSError,ValueError):return None
+
 
 def _ask_keep_instance(existing,theme='晨霧'):
     old_version=existing.get('version') or '無法識別的舊版'
@@ -144,6 +161,7 @@ def serve(no_browser=False,startup=False,preview=False):
     token=secrets.token_urlsafe(32);engine=Engine();closing=threading.Event();url=f'http://127.0.0.1:{PORT}/'
     runtime=DATA/'runtime.json';web=BASE/'web'
     audit=AuditTrail(DATA,BASE/'使用聲明.md',APP_VERSION,APP_BUILD_ID,preview)
+    instance=dict(app='AEMEATH-Studio',pid=os.getpid(),version=APP_VERSION,build_id=APP_BUILD_ID,base_path=str(BASE))
     ui_clients={};ui_clients_lock=threading.Lock()
     def mark_ui_client(client_id):
         if not isinstance(client_id,str) or not 0<len(client_id)<=128:return
@@ -189,6 +207,8 @@ def serve(no_browser=False,startup=False,preview=False):
         def do_GET(self):
             if not self.valid_host():self.send(403,{'error':'Host denied'});return
             path=urllib.parse.urlsplit(self.path).path
+            if path=='/api/instance':
+                self.send(200,instance);return
             if path=='/api/notice':
                 if not self.authorized():self.send(403,{'error':'Token denied'});return
                 try:self.send(200,audit.info())
@@ -197,7 +217,7 @@ def serve(no_browser=False,startup=False,preview=False):
             if path=='/api/state':
                 if not self.authorized():self.send(403,{'error':'Token denied'});return
                 mark_ui_client(self.headers.get('X-Aemeath-Client'))
-                state=engine.snapshot();state.update(tray=tray.ready,tray_error=tray.error,autostart_actual=autostart_enabled(),preview=preview,ui_active=ui_is_active())
+                state=engine.snapshot();state.update(tray=tray.ready,tray_error=tray.error,autostart_actual=autostart_enabled(),preview=preview,ui_active=ui_is_active(),instance=instance)
                 self.send(200,state);return
             if path.startswith('/api/'):self.send(404,{});return
             name='index.html' if path=='/' else urllib.parse.unquote(path.lstrip('/'))

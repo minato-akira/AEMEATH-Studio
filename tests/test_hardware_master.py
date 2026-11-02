@@ -16,7 +16,7 @@ class NativeTests(unittest.TestCase):
    self.assertEqual(driver.demo.tables[0x13][14:16],bytes(2));self.assertFalse(e.desired)
    self.assertEqual(len(list((Path(d)/'lighting-backups').glob('*.json'))),2)
  def test_heart_rest_black_even_low_gamma(self):
-  c=copy.deepcopy(DEFAULT);c['groups']=[c['groups'][1]];c['groups'][0]['brightness']=1
+  c=copy.deepcopy(DEFAULT);c['groups']=[dict(name='heartbeat',keys=HEART,effect='心跳',color='#66D2FF',brightness=1,speed=1,bpm=72)]
   c['groups'][0].update(background_color='#FFFFFF',background_brightness=1)
   for gamma in (.15,.5,1,3):
    c['settings']['gamma']=gamma

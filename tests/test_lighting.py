@@ -7,11 +7,12 @@ import subprocess
 import sys
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from engine import DEFAULT,KEYS,ORDER,render,transform_output,quantize_color,dataflow_level,color_faithful
+from engine import SETTINGS,DEFAULT,KEYS,ORDER,render,transform_output,quantize_color,dataflow_level,color_faithful
 
 class LightingTests(unittest.TestCase):
     def config(self,color='#E45879',brightness=1,effect='恆亮'):
         cfg=copy.deepcopy(DEFAULT)
+        cfg['settings']=copy.deepcopy(SETTINGS)
         cfg['groups']=[dict(name='回歸',keys=ORDER,color=color,brightness=brightness,effect=effect,speed=.7,bpm=72)]
         return cfg
     def test_dimming_keeps_fractional_color_ratios(self):
@@ -38,7 +39,7 @@ class LightingTests(unittest.TestCase):
     def test_gamma_changes_brightness_not_individual_channel_curve(self):
         raw={0:(80.,40.,20.)}
         for gamma in (.5,1,2):
-            s=dict(DEFAULT['settings'],gamma=gamma)
+            s=dict(SETTINGS,gamma=gamma)
             q=transform_output(raw,s)[0]
             if any(q):self.assertTrue(color_faithful(raw[0],q))
     def test_data_head_moves_down_and_tail_stays_above(self):

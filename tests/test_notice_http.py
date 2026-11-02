@@ -71,6 +71,14 @@ class NoticeHttpTests(unittest.TestCase):
         else: self.fail('Test server did not start')
         self.port = server.PORT
 
+    def test_discovery_does_not_expose_token_or_authorize_operations(self):
+        status, identity = self.request('GET', 'instance', token='wrong')
+        self.assertEqual(status, 200)
+        self.assertEqual(identity['app'], 'AEMEATH-Studio')
+        self.assertNotIn('token', identity)
+        self.assertNotIn(self.token, json.dumps(identity))
+        self.assertEqual(self.request('GET', 'notice', token='wrong')[0], 403)
+
     def stop_server(self):
         if hasattr(self, 'port') and self.thread.is_alive():
             try: self.request('POST', 'quit', {})
