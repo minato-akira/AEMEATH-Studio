@@ -42,3 +42,5 @@ function setupColor(){
  window.addEventListener('beforeunload',e=>{if(colorDirty){e.preventDefault();e.returnValue=''}});
 }
 window.studioReady.then(setupColor);
+const previousColorConfigLoaded=window.onStudioConfigLoaded;
+window.onStudioConfigLoaded=()=>{previousColorConfigLoaded?.();if(colorDraft&&!colorDirty&&!colorTestActive)readSavedColors()};

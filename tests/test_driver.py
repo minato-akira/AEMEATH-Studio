@@ -5,7 +5,7 @@ import sys
 import tempfile
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from engine import Engine,DEFAULT,transform_output,render,ORDER
+from engine import SETTINGS,Engine,DEFAULT,transform_output,render,ORDER
 from driver import Driver,binding,encode_macros,decode_macros,HID
 from protocol import check_report,write_table,query_table
 
@@ -50,7 +50,7 @@ class Tests(unittest.TestCase):
         with self.assertRaises(ValueError):write_table(0x22,bytes(513),64)
         with self.assertRaises(ValueError):query_table(0x15,64,5100,56)
     def test_color_pipeline(self):
-        cfg=copy.deepcopy(DEFAULT);s=cfg['settings'];self.assertEqual(transform_output({0:(255,128,0)},s)[0],(255,128,0))
+        s=copy.deepcopy(SETTINGS);self.assertEqual(transform_output({0:(255,128,0)},s)[0],(255,128,0))
         s['color_order']='BGR';self.assertEqual(transform_output({0:(255,128,0)},s)[0],(0,128,255))
         s['gamma']=.5;s['color_order']='RGB';self.assertGreater(transform_output({0:(16,0,0)},s)[0][0],16)
     def test_dataflow_is_spatial_and_reproducible(self):

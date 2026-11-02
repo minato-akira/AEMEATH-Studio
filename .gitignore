@@ -1,4 +1,8 @@
 __pycache__/
+data/
+.local-backups/
+*.bak
+/PROJECT_HANDOFF.md
 *.py[cod]
 .venv/
 venv/
@@ -10,3 +14,4 @@ backups/
 *.log
 .DS_Store
 Thumbs.db
+/dist/

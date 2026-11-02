@@ -6,6 +6,7 @@ import logging
 import math
 import os
 from pathlib import Path
+import shutil
 import threading
 import time
 import uuid
@@ -23,12 +24,280 @@ KEYS=json.loads((BASE/'keys.json').read_text(encoding='utf-8'));ORDER=[k['id'] f
 POSITIONS={k['id']:(k['x']+k['w']/2,k['y']+.5) for k in KEYS}
 HEART=[k['id'] for k in KEYS if k['heart']]
 EFFECTS=['恆亮','呼吸','彩虹','波浪','閃爍','心跳','觸鍵星光','星光漣漪','核心資料流','熄滅']
-DATA=Path(os.environ.get('LOCALAPPDATA',str(Path.home()))) / 'AEMEATH_Background'
+DATA=BASE/'data'
+LEGACY_DATA=Path(os.environ.get('LOCALAPPDATA',str(Path.home()))) / 'AEMEATH_Background'
+MIGRATION_MARKER=DATA/'.legacy-data-migrated'
+
+def migrate_legacy_data(logger=None):
+    """Move the previous per-user data folder into this package, preserving conflicts."""
+    log=logger or logging.getLogger('aemeath.storage')
+    if MIGRATION_MARKER.exists() or not LEGACY_DATA.is_dir():return False
+    DATA.mkdir(parents=True,exist_ok=True);copied=0
+    for source in sorted(LEGACY_DATA.rglob('*')):
+        if source.is_symlink() or not source.is_file():continue
+        relative=source.relative_to(LEGACY_DATA);target=DATA/relative
+        target.parent.mkdir(parents=True,exist_ok=True)
+        source_bytes=source.read_bytes()
+        if target.is_file() and target.read_bytes()==source_bytes:continue
+        if target.exists():
+            stamp=time.strftime('%Y%m%d-%H%M%S')
+            archive=DATA/'migration-conflicts'/'package-data'/relative
+            if archive.exists():archive=archive.with_name(f'{archive.name}.{stamp}')
+            archive.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(target,archive)
+            if archive.read_bytes()!=target.read_bytes():raise OSError(f'資料遷移備份驗證失敗：{archive}')
+            log.warning('資料遷移發現同名內容差異，已保留包體原檔：%s',archive)
+        temporary=target.with_name(target.name+'.migration.tmp')
+        try:
+            shutil.copy2(source,temporary)
+            if temporary.read_bytes()!=source_bytes:raise OSError(f'資料遷移副本驗證失敗：{relative}')
+            temporary.replace(target)
+        finally:
+            try:temporary.unlink(missing_ok=True)
+            except OSError:log.warning('無法清除遷移暫存檔：%s',temporary)
+        copied+=1
+    DATA.mkdir(parents=True,exist_ok=True);MIGRATION_MARKER.write_text('migrated\n',encoding='utf-8')
+    log.info('舊資料遷移完成準備：source=%s destination=%s copied=%d',LEGACY_DATA,DATA,copied)
+    return True
+
+def cleanup_legacy_data(logger=None):
+    """Remove only legacy files whose package copies have been byte-verified."""
+    log=logger or logging.getLogger('aemeath.storage')
+    if not LEGACY_DATA.is_dir():
+        DATA.mkdir(parents=True,exist_ok=True);MIGRATION_MARKER.write_text('migrated\n',encoding='utf-8');return True
+    remaining=[]
+    for source in sorted(LEGACY_DATA.rglob('*'),key=lambda p:len(p.parts),reverse=True):
+        if source.is_symlink():
+            remaining.append(source);continue
+        if source.is_file():
+            target=DATA/source.relative_to(LEGACY_DATA)
+            try:
+                if target.is_file() and target.read_bytes()==source.read_bytes():source.unlink()
+                else:remaining.append(source)
+            except OSError:remaining.append(source)
+        elif source.is_dir():
+            try:source.rmdir()
+            except OSError:pass
+    try:LEGACY_DATA.rmdir()
+    except OSError:pass
+    if LEGACY_DATA.exists():
+        log.warning('部分舊資料未能安全移除，仍保留於：%s',LEGACY_DATA)
+        return False
+    DATA.mkdir(parents=True,exist_ok=True);MIGRATION_MARKER.write_text('migrated\n',encoding='utf-8')
+    log.info('舊資料已完成驗證並移除舊位置；現行資料集中於：%s',DATA)
+    return True
+
+def migrate_legacy_logs(logger=None):
+    """Copy old package-level logs into the consolidated data folder."""
+    log=logger or logging.getLogger('aemeath.storage')
+    legacy=BASE/'logs'
+    if not legacy.is_dir():return 0
+    destination=DATA/'logs'/'previous';destination.mkdir(parents=True,exist_ok=True)
+    copied=0
+    for source in sorted(legacy.rglob('*')):
+        if source.is_symlink() or not source.is_file():continue
+        relative=source.relative_to(legacy);target=destination/relative
+        target.parent.mkdir(parents=True,exist_ok=True)
+        source_bytes=source.read_bytes()
+        if target.is_file() and target.read_bytes()==source_bytes:
+            try:source.unlink()
+            except OSError:pass
+            continue
+        if target.exists():
+            stamp=time.strftime('%Y%m%d-%H%M%S')
+            target=target.with_name(f'{target.name}.{stamp}')
+        shutil.copy2(source,target)
+        if target.read_bytes()!=source_bytes:raise OSError(f'日誌遷移副本驗證失敗：{relative}')
+        copied+=1
+    log.info('舊日誌已複製並比對：source=%s destination=%s copied=%d',legacy,destination,copied)
+    return copied
+
+def cleanup_legacy_logs(logger=None):
+    """Remove old logs only when a matching copy exists in the package data folder."""
+    log=logger or logging.getLogger('aemeath.storage')
+    legacy=BASE/'logs'
+    if not legacy.is_dir():return True
+    remaining=[]
+    for source in sorted(legacy.rglob('*'),key=lambda p:len(p.parts),reverse=True):
+        if source.is_symlink():
+            remaining.append(source);continue
+        if source.is_file():
+            target=DATA/'logs'/'previous'/source.relative_to(legacy)
+            copies=[target,*target.parent.glob(target.name+'.*')]
+            try:
+                if any(copy.is_file() and copy.read_bytes()==source.read_bytes() for copy in copies):source.unlink()
+                else:remaining.append(source)
+            except OSError:remaining.append(source)
+        elif source.is_dir():
+            try:source.rmdir()
+            except OSError:pass
+    try:legacy.rmdir()
+    except OSError:pass
+    if legacy.exists():
+        log.warning('部分舊日誌仍在使用或無法安全移除，保留於：%s',legacy)
+        return False
+    log.info('舊日誌已完成驗證並移除舊位置')
+    return True
 SETTINGS={'autostart':False,'start_hidden':False,'auto_effects':False,'reconnect':False,'connection':'自動','fps':15,'theme':'晨霧','motion':True,'global_keys':False,'master':1.0,'hardware_master':False,'color_order':'RGB','gamma':1.0,'red_gain':1.0,'green_gain':1.0,'blue_gain':1.0,'idle_minutes':0,'color_profiles':{}}
-DEFAULT={'version':6,'groups':[
- {'name':'雪色底光','keys':ORDER,'effect':'恆亮','color':'#ABB8EB','brightness':.24,'speed':.5,'bpm':72},
- {'name':'藍色心型','keys':HEART,'effect':'心跳','color':'#66D2FF','brightness':.85,'speed':1,'bpm':72},
- {'name':'星光功能列','keys':list(range(1,13)),'effect':'彩虹','color':'#F0A8CE','brightness':.35,'speed':.25,'bpm':72}], 'settings':copy.deepcopy(SETTINGS)}
+# 發行預設：僅包含已選定的燈效、校色與外觀；不帶入個人啟動設定。
+DEFAULT={'version': 6,
+ 'groups': [{'name': '底色',
+             'keys': [0,
+                      1,
+                      2,
+                      3,
+                      4,
+                      5,
+                      6,
+                      7,
+                      8,
+                      9,
+                      10,
+                      11,
+                      12,
+                      106,
+                      45,
+                      46,
+                      47,
+                      16,
+                      17,
+                      18,
+                      19,
+                      20,
+                      21,
+                      22,
+                      23,
+                      24,
+                      25,
+                      26,
+                      27,
+                      92,
+                      61,
+                      62,
+                      63,
+                      32,
+                      33,
+                      34,
+                      35,
+                      36,
+                      37,
+                      38,
+                      39,
+                      40,
+                      41,
+                      42,
+                      43,
+                      44,
+                      60,
+                      77,
+                      78,
+                      79,
+                      48,
+                      49,
+                      51,
+                      52,
+                      53,
+                      54,
+                      55,
+                      56,
+                      57,
+                      58,
+                      59,
+                      76,
+                      93,
+                      94,
+                      64,
+                      65,
+                      66,
+                      67,
+                      68,
+                      69,
+                      70,
+                      71,
+                      72,
+                      73,
+                      74,
+                      75,
+                      90,
+                      80,
+                      81,
+                      82,
+                      83,
+                      84,
+                      85,
+                      86,
+                      87,
+                      88,
+                      89,
+                      91],
+             'effect': '恆亮',
+             'color': '#5487FF',
+             'brightness': 0.18,
+             'speed': 1,
+             'bpm': 72,
+             'background_color': '#000000',
+             'background_brightness': 0,
+             'wave_width': 0.35},
+            {'name': 'WASD 呼吸',
+             'keys': [34, 49, 50, 51],
+             'effect': '呼吸',
+             'color': '#FF4133',
+             'brightness': 0.9,
+             'speed': 0.28,
+             'bpm': 62,
+             'background_color': '#000000',
+             'background_brightness': 0,
+             'wave_width': 0.35},
+            {'name': '功能鍵彩虹',
+             'keys': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+             'effect': '波浪',
+             'color': '#00FFFF',
+             'brightness': 0.22,
+             'speed': 1.47,
+             'bpm': 72,
+             'background_color': '#000000',
+             'background_brightness': 0,
+             'wave_width': 0.63},
+            {'name': '心型核心',
+             'keys': [24, 25, 27, 28, 39, 40, 41, 42, 43, 44, 55, 56, 57, 58, 59, 71, 72, 73, 74, 84],
+             'effect': '心跳',
+             'color': '#C03041',
+             'brightness': 0.8,
+             'speed': 0.74,
+             'bpm': 25,
+             'background_color': '#5634fe',
+             'background_brightness': 0,
+             'wave_width': 0.35}],
+ 'settings': {'autostart': False,
+              'start_hidden': False,
+              'auto_effects': False,
+              'reconnect': False,
+              'connection': '自動',
+              'fps': 15,
+              'theme': '星海',
+              'motion': True,
+              'global_keys': False,
+              'master': 0.93,
+              'hardware_master': False,
+              'color_order': 'RGB',
+              'gamma': 0.34,
+              'red_gain': 1.26,
+              'green_gain': 0.82,
+              'blue_gain': 0.69,
+              'idle_minutes': 0,
+              'color_profiles': {'heart': {'color_order': 'RGB',
+                                           'gamma': 0.4,
+                                           'red_gain': 1.38,
+                                           'green_gain': 0.46,
+                                           'blue_gain': 0.53}}},
+ 'active_mode': 'leisure',
+ 'native_lighting': {'mode': 14,
+                     'color': '#fe1028',
+                     'brightness': 5,
+                     'speed': 3,
+                     'direction': 1,
+                     'colorMode': 0},
+ 'schemes': {'leisure': [], 'native': []}}
 
 def finite(v,lo,hi):
     if isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v) or not lo<=v<=hi:raise ValueError('數值超出範圍')
@@ -335,7 +604,6 @@ class Engine:
                             if idle_seconds()>=idle*60:
                                 self.status='閒置暫停輸出，允許鍵盤休眠';self.stop_event.wait(.5);continue
                             if self.status.startswith('閒置'):self.status=mode+' 已恢復輸出'
-                        hardware=False
                         now=tick-self.started;colors=render(cfg,now,events,identify)
                         with self.lock:
                             if self.calibration and time.monotonic()>self.calibration['until']:self.calibration=None
@@ -345,7 +613,6 @@ class Engine:
                             colors={k:tuple(v*cal['brightness'] for v in cal['rgb']) if k in cal['keys'] else (0,0,0) for k in ORDER}
                             output_settings=dict(cfg['settings'],**cal['settings']);output_settings['color_profiles']={}
                         colors=transform_output(colors,output_settings,mode)
-                        if hardware and cfg['settings']['master']==0:colors={k:(0,0,0)for k in ORDER}
                         for report in frames(colors,ORDER,mode):
                             if self.stop_event.is_set():break
                             if mode=='USB':reply=device.exchange(report,250,True)

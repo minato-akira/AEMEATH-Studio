@@ -15,8 +15,9 @@ import urllib.parse
 import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
-from engine import Engine,DATA,BASE,KEYS,DEFAULT,EFFECTS,validate
+from engine import Engine,DATA,BASE,KEYS,DEFAULT,EFFECTS,validate,migrate_legacy_data,cleanup_legacy_data,migrate_legacy_logs,cleanup_legacy_logs
 from driver import Driver
+from audit_trail import AuditTrail,NoticeRequired
 from windows_tools import Tray,autostart_enabled,set_autostart,diagnostics,global_key_loop,focus_aemeath_window,refresh_aemeath_window
 from version import APP_VERSION,APP_VERSION_LABEL,APP_BUILD_ID
 
@@ -33,17 +34,34 @@ def _port_available(host,port):
     finally:sock.close()
 
 def _running_instance(runtime,url):
+    # Discovery exposes identity only; the token stays in the running package.
+    # Read that package's receipt locally, then require an authenticated response.
+    identity=None
+    try:
+        with urllib.request.urlopen(url+'api/instance',timeout=1.5) as response:
+            candidate=json.load(response)
+        if (isinstance(candidate,dict) and candidate.get('app')=='AEMEATH-Studio'
+                and type(candidate.get('pid')) is int and candidate['pid']>0
+                and isinstance(candidate.get('base_path'),str)
+                and Path(candidate['base_path']).is_absolute()):
+            identity=candidate
+            runtime=Path(candidate['base_path'])/'data'/'runtime.json'
+    except (OSError,ValueError):pass
     try:info=json.loads(runtime.read_text(encoding='utf-8'))
     except (OSError,ValueError):return None
     if not isinstance(info,dict):return None
+    if identity and any(info.get(k)!=identity.get(k) for k in ('pid','version','build_id','base_path')):return None
     token=info.get('token')
     if not isinstance(token,str) or not token:return None
     try:
         req=urllib.request.Request(url+'api/state',headers={'X-Aemeath-Token':token})
         with urllib.request.urlopen(req,timeout=1.5) as response:state=json.load(response)
-        info['_ui_active']=bool(state.get('ui_active',False)) if isinstance(state,dict) else False
+        if not isinstance(state,dict):return None
+        if identity and state.get('instance')!=identity:return None
+        info['_ui_active']=bool(state.get('ui_active',False))
         return info
-    except Exception:return None
+    except (OSError,ValueError):return None
+
 
 def _ask_keep_instance(existing,theme='晨霧'):
     old_version=existing.get('version') or '無法識別的舊版'
@@ -135,11 +153,15 @@ def _resolve_existing_instance(runtime,url,no_browser,log,theme='晨霧'):
 
 def serve(no_browser=False,startup=False,preview=False):
     DATA.mkdir(parents=True,exist_ok=True)
-    log_dir=BASE/'logs';log_dir.mkdir(parents=True,exist_ok=True)
+    log_dir=DATA/'logs';log_dir.mkdir(parents=True,exist_ok=True)
     logging.basicConfig(handlers=[RotatingFileHandler(log_dir/'studio.log',maxBytes=600000,backupCount=2,encoding='utf-8')],level=logging.INFO,format='%(asctime)s %(levelname)s %(name)s %(message)s')
     log=logging.getLogger('aemeath.server')
+    migrate_legacy_data(log)
+    migrate_legacy_logs(log)
     token=secrets.token_urlsafe(32);engine=Engine();closing=threading.Event();url=f'http://127.0.0.1:{PORT}/'
     runtime=DATA/'runtime.json';web=BASE/'web'
+    audit=AuditTrail(DATA,BASE/'使用聲明.md',APP_VERSION,APP_BUILD_ID,preview)
+    instance=dict(app='AEMEATH-Studio',pid=os.getpid(),version=APP_VERSION,build_id=APP_BUILD_ID,base_path=str(BASE))
     ui_clients={};ui_clients_lock=threading.Lock()
     def mark_ui_client(client_id):
         if not isinstance(client_id,str) or not 0<len(client_id)<=128:return
@@ -185,10 +207,17 @@ def serve(no_browser=False,startup=False,preview=False):
         def do_GET(self):
             if not self.valid_host():self.send(403,{'error':'Host denied'});return
             path=urllib.parse.urlsplit(self.path).path
+            if path=='/api/instance':
+                self.send(200,instance);return
+            if path=='/api/notice':
+                if not self.authorized():self.send(403,{'error':'Token denied'});return
+                try:self.send(200,audit.info())
+                except (OSError,ValueError):self.send(503,{'error':'無法讀取聲明紀錄，請確認程式檔案與資料夾權限'})
+                return
             if path=='/api/state':
                 if not self.authorized():self.send(403,{'error':'Token denied'});return
                 mark_ui_client(self.headers.get('X-Aemeath-Client'))
-                state=engine.snapshot();state.update(tray=tray.ready,tray_error=tray.error,autostart_actual=autostart_enabled(),preview=preview,ui_active=ui_is_active())
+                state=engine.snapshot();state.update(tray=tray.ready,tray_error=tray.error,autostart_actual=autostart_enabled(),preview=preview,ui_active=ui_is_active(),instance=instance)
                 self.send(200,state);return
             if path.startswith('/api/'):self.send(404,{});return
             name='index.html' if path=='/' else urllib.parse.unquote(path.lstrip('/'))
@@ -219,7 +248,9 @@ def serve(no_browser=False,startup=False,preview=False):
                     self.close_connection=True
                     raise ValueError('請求大小無效')
                 body=json.loads(self.rfile.read(size))
-                if path=='/api/ui-close':
+                if path=='/api/notice/decision':
+                    self.send(200,audit.decision(body.get('notice_sha256'),body.get('decision')))
+                elif path=='/api/ui-close':
                     with ui_clients_lock:ui_clients.pop(client_id,None)
                     self.send(200,{'ok':True})
                 elif path=='/api/native-diagnostic':
@@ -236,10 +267,12 @@ def serve(no_browser=False,startup=False,preview=False):
                     self.send(200,{'ok':True,'config':cfg})
                 elif path=='/api/native-lighting':
                     from native_lighting import apply_native
-                    self.send(200,apply_native(driver,body))
+                    self.send(200,audit.run('native-lighting',body,lambda:apply_native(driver,body)))
                 elif path=='/api/start':
-                    with engine.maintenance_lock:engine.start()
-                    self.send(200,{'ok':True})
+                    def start_lighting():
+                        with engine.maintenance_lock:engine.start()
+                        return {'ok':True,'simulated':preview}
+                    self.send(200,audit.run('start',body,start_lighting))
                 elif path=='/api/stop':engine.stop();self.send(200,{'ok':True})
                 elif path=='/api/key':engine.press(body.get('id'));self.send(200,{'ok':True})
                 elif path=='/api/identify':
@@ -248,15 +281,18 @@ def serve(no_browser=False,startup=False,preview=False):
                     with engine.lock:engine.identify=ids
                     self.send(200,{'ok':True})
                 elif path=='/api/driver/read':self.send(200,driver.load())
-                elif path=='/api/driver/write':self.send(200,driver.change(body))
-                elif path=='/api/driver/restore':self.send(200,driver.restore(body.get('name')))
+                elif path=='/api/driver/write':self.send(200,audit.run('driver/write',body,lambda:driver.change(body)))
+                elif path=='/api/driver/restore':self.send(200,audit.run('driver/restore',body,lambda:driver.restore(body.get('name'))))
                 elif path=='/api/calibrate':
-                    engine.set_calibration(body)
-                    self.send(200,{'ok':True})
+                    if body.get('rgb') is None:
+                        engine.set_calibration(body);self.send(200,{'ok':True})
+                    else:self.send(200,audit.run('calibrate',body,lambda:engine.set_calibration(body)))
                 elif path=='/api/diagnostics':
                     report=diagnostics();state=engine.snapshot();report['lighting']={key:state[key] for key in ('status','error','connection','fps','sent','acks')};self.send(200,report)
                 elif path=='/api/quit':self.send(200,{'ok':True});closing.set()
                 else:self.send(404,{})
+            except NoticeRequired as e:
+                self.send(428,{'error':str(e),'code':'notice_required'})
             except (ValueError,KeyError,TypeError) as e:
                 log.warning('API 請求拒絕 path=%s reason=%s',path,str(e))
                 self.send(400,{'error':str(e)})
@@ -276,19 +312,33 @@ def serve(no_browser=False,startup=False,preview=False):
     except OSError:
         handoff=_resolve_existing_instance(runtime,url,no_browser,log,engine.config.get('settings',{}).get('theme','晨霧'))
         if handoff is None:return
+        migrate_legacy_data(log)
+        migrate_legacy_logs(log)
+        engine=Engine()
+        if preview:engine.run=run_preview
+        driver=Driver(engine,preview)
+        tray=Tray(show,engine.stop,quit_app,BASE/'app.ico')
         try:server=Server(('127.0.0.1',PORT),Handler)
         except OSError as error:raise OSError(f'已選擇保留本次版本，但連接埠 {PORT} 尚未釋放；請稍後再啟動。') from error
+    cleanup_legacy_data(log)
+    cleanup_legacy_logs(log)
     runtime.write_text(json.dumps({'token':token,'pid':os.getpid(),'version':APP_VERSION,'build_id':APP_BUILD_ID,'base_path':str(BASE)}),encoding='utf-8')
     log.info('應用程式啟動 version=%s build=%s preview=%s startup=%s port=%s',APP_VERSION,APP_BUILD_ID,preview,startup,PORT)
     threading.Thread(target=server.serve_forever,daemon=True).start();tray.start()
     threading.Thread(target=global_key_loop,args=(engine,KEYS,closing),daemon=True).start()
-    if startup and engine.config['settings']['auto_effects']:engine.start()
+    notice_pending=False
+    if startup and engine.config['settings']['auto_effects']:
+        try:audit.run('start',{},engine.start,source='autostart')
+        except NoticeRequired:
+            notice_pending=True;engine.status='請先在介面確認使用聲明，再開始燈效'
+        except OSError:
+            notice_pending=True;engine.status='無法保存操作紀錄，請檢查 data 資料夾權限';log.exception('自動啟動未執行')
     # 沒有系統匣時不可完全隱藏，保留可以開啟/結束程式的視窗入口。
     if startup:
         for _ in range(30):
             if tray.ready or tray.error:break
             time.sleep(.05)
-    hidden=startup and engine.config['settings']['start_hidden'] and tray.ready
+    hidden=startup and engine.config['settings']['start_hidden'] and tray.ready and not notice_pending
     if not no_browser and not hidden:
         if handoff:
             if refresh_aemeath_window('愛彌斯・絨雪輕歌｜鍵盤控制台'):

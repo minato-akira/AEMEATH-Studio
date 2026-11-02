@@ -63,7 +63,7 @@ def apply_native(driver,value):
             cfg=driver.engine.snapshot()['config'];cfg['active_mode']='native';cfg['native_lighting']=dict(v);driver.engine.save(cfg)
             record['stage']='verified';record['ok']=True;save()
         driver.engine.status=f"內建燈效 · 亮度 {v['brightness']}/5 已確認；顏色讀回不提供驗證，停止持續傳送"
-        return dict(ok=True,simulated=driver.preview,actual=record['actual'],color_verified=False)
+        return dict(ok=True,simulated=driver.preview,actual=record['actual'],color_verified=False,native_lighting=dict(v),active_mode='native')
     except Exception as exc:
         log.exception('內建燈效套用失敗 stage=%s writes=%s',record.get('stage'),record.get('writes'))
         record.update(ok=False,error=str(exc));save()

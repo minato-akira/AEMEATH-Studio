@@ -48,6 +48,7 @@ class EngineTests(unittest.TestCase):
         self.assertLess(heartbeat(period*.8),.04);self.assertAlmostEqual(heartbeat(period*.16),heartbeat(period*1.16))
     def test_reactive_is_local_and_bounded(self):
         cfg=copy.deepcopy(DEFAULT);cfg['groups']=[dict(name='試驗',keys=ORDER,effect='觸鍵星光',color='#FFFFFF',brightness=1,speed=1,bpm=72)]
+        cfg['settings']['master']=1
         self.assertEqual(render(cfg,0)[34],(0,0,0))
         self.assertEqual(render(cfg,1,[(34,1)])[34],(255,255,255));self.assertEqual(render(cfg,1,[(34,1)])[35],(0,0,0))
         self.assertEqual(render(cfg,4,[(34,1)])[34],(0,0,0))

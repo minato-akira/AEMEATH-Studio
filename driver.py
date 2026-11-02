@@ -289,7 +289,8 @@ class Driver:
                 if retained:
                     detail='；'.join(f"M{macro['id']+1}：{macro.get('validationIssue')or'含不支援的原始動作'}"for macro in retained)
                     raise ValueError('以下宏有無效動作，先從宏清單刪除並重建，才可寫入：'+detail)
-                removed={macro['id']for macro in invalid if macro['id']not in requested_ids}
+                live_ids={item['id'] for item in requested if isinstance(item,dict) and type(item.get('id')) is int and item.get('actions')}
+                removed={macro['id'] for macro in existing if macro['id'] not in live_ids}
                 if removed:
                     bindings=[]
                     for layer,table in (('一般',self.read(d,0x12,512)),('Fn',self.read(d,0x16,512))):
@@ -298,7 +299,7 @@ class Driver:
                             if bind[0]==6 and bind[1]in removed:
                                 key_name=KEY_BY_ID.get(key_id,{}).get('name',str(key_id))
                                 bindings.append(f'{layer}層 {key_name}(LED {key_id})→M{bind[1]+1}')
-                    if bindings:raise ValueError('異常宏仍被按鍵使用，為避免留下失效綁定，請先解除：'+'；'.join(bindings))
+                    if bindings:raise ValueError('宏仍被按鍵使用，不能刪除或清空，請先解除：'+'；'.join(bindings))
                     for macro in invalid:
                         if macro['id']in removed:log.warning('使用者要求移除未綁定的無效宏 M%s：%s',macro['id']+1,macro.get('validationIssue')or'不支援的原始動作')
                 raw=encode_macros(requested,capacity);desc='更新宏列表'
@@ -318,7 +319,7 @@ class Driver:
         if cmd not in (0x21,0x22,0x25,0x26):raise ValueError('未知備份命令')
         if bool(r.get('simulated'))!=self.preview:raise ValueError('預覽備份不能寫入實體鍵盤，實體備份也不寫入預覽裝置')
         with self.device()as(d,info):
-            get={0x23:0x13,0x21:0x11,0x22:0x12,0x25:0x15,0x26:0x16}[cmd]
+            get={0x21:0x11,0x22:0x12,0x25:0x15,0x26:0x16}[cmd]
             cap={0x21:56,0x22:512,0x26:512,0x25:min(5120,info.get('macro_capacity',4608))}[cmd]
             if len(raw)!=cap:raise ValueError('備份容量與此裝置不符')
             current=self.read(d,get,cap);self.backup(cmd,current,'還原前備份');self.write(d,cmd,raw)

@@ -2,12 +2,11 @@
 from pathlib import Path
 import logging
 from logging.handlers import RotatingFileHandler
-import os
 import sys
 BASE=Path(__file__).resolve().parent
 sys.path.insert(0,str(BASE))
-DATA=Path(os.environ.get('LOCALAPPDATA',str(Path.home()))) / 'AEMEATH_Background'
-LOG_DIR=BASE/'logs'
+DATA=BASE/'data'
+LOG_DIR=DATA/'logs'
 try:
     LOG_DIR.mkdir(parents=True,exist_ok=True)
     logging.basicConfig(handlers=[RotatingFileHandler(LOG_DIR/'studio.log',maxBytes=600000,backupCount=2,encoding='utf-8')],level=logging.INFO,format='%(asctime)s %(levelname)s %(name)s %(message)s',force=True)

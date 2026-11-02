@@ -8,7 +8,44 @@ const hasBackend=token!=='__APP_TOKEN__';const keyNodes=new Map();const ids=keys
 const descriptions={'核心資料流':'不規則光流沿垂直方向下降，各欄不依左右順序亮起。','恆亮':'溫柔地亮著，陪伴每一次敲擊。','呼吸':'整個群組一起漸亮、漸暗。','彩虹':'每顆鍵都是光譜中不同的星。','波浪':'依實體橫向位置，讓光流過按鍵。','閃爍':'俐落的亮滅節奏，可調整速度。','心跳':'主拍、次拍，再留一點舒張的寧靜。','觸鍵星光':'敲下按鍵，讓那顆星短暫發光。','星光漣漪':'以敲擊位置為中心，讓光向外擴散。','熄滅':'讓這一區安靜下來。'};
 let toastTimer;
 function toast(text){$('toast').textContent=text;$('toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('visible'),3500)}
-async function api(path,body,timeoutMs=0){if(!hasBackend)throw Error('這是靜態預覽，請執行 Launch.pyw 後操作');const options={headers:{'X-Aemeath-Token':token,'X-Aemeath-Client':clientId}},controller=timeoutMs?new AbortController():null;if(controller)options.signal=controller.signal;if(body!==undefined){options.method='POST';options.headers['Content-Type']='application/json';options.body=JSON.stringify(body)}let timer;if(controller)timer=setTimeout(()=>controller.abort(),timeoutMs);try{const response=await fetch('/api/'+path,options);const result=await response.json();if(!response.ok)throw Error(result.error||'操作失敗');return result}catch(e){if(controller&&e.name==='AbortError')throw Error('連線逾時，請確認 AEMEATH Studio 已啟動');throw e}finally{clearTimeout(timer)}}
+async function apiRequest(path,body,timeoutMs=0){if(!hasBackend)throw Error('這是靜態預覽，請執行 Launch.pyw 後操作');const options={headers:{'X-Aemeath-Token':token,'X-Aemeath-Client':clientId}},controller=timeoutMs?new AbortController():null;if(controller)options.signal=controller.signal;if(body!==undefined){options.method='POST';options.headers['Content-Type']='application/json';options.body=JSON.stringify(body)}let timer;if(controller)timer=setTimeout(()=>controller.abort(),timeoutMs);try{const response=await fetch('/api/'+path,options);const result=await response.json();if(!response.ok){const error=Error(result.error||'操作失敗');error.code=result.code;throw error}return result}catch(e){if(controller&&e.name==='AbortError')throw Error('連線逾時，請確認 AEMEATH Studio 已啟動');throw e}finally{clearTimeout(timer)}}
+let noticeConfirmed=false,noticeConfirmation=null,startupNoticeAttempted=false,nextNoticeAttempt=0;
+async function promptStartupNotice(){
+ if(startupNoticeAttempted||noticeConfirmed||noticeConfirmation||activeThemedDialog||Date.now()<nextNoticeAttempt)return;
+ startupNoticeAttempted=true;
+ try{await ensureNotice()}catch(error){
+  if(error.code!=='notice_cancelled'){startupNoticeAttempted=false;nextNoticeAttempt=Date.now()+5000}
+  toast(error.message);
+ }
+}
+async function ensureNotice(){
+ if(noticeConfirmed)return;
+ if(noticeConfirmation)return noticeConfirmation;
+ noticeConfirmation=(async()=>{
+  const notice=await apiRequest('notice',undefined,5000);
+  if(notice.acknowledged){noticeConfirmed=true;return}
+  if(typeof activeThemedDialog!=='undefined'&&activeThemedDialog){const error=Error('請先關閉目前的對話框，再確認使用聲明');error.code='notice_busy';throw error}
+  const accepted=await themedDialog({title:'操作風險與資料說明',message:notice.text+'\n\n確認紀錄保存在此程式資料夾；聲明變更後需重新確認。',confirmLabel:'已閱讀，繼續操作',notice:true});
+  if(!accepted){try{await apiRequest('notice/decision',{notice_sha256:notice.notice_sha256,decision:'cancelled'},5000)}catch{};const error=Error('已取消，尚未執行裝置操作');error.code='notice_cancelled';throw error}
+  await apiRequest('notice/decision',{notice_sha256:notice.notice_sha256,decision:'acknowledged'},5000);
+  noticeConfirmed=true;
+ })();
+ try{await noticeConfirmation}finally{noticeConfirmation=null}
+}
+async function api(path,body,timeoutMs=0){
+ const protectedOperation=['driver/write','driver/restore','native-lighting','start'].includes(path)||(path==='calibrate'&&body?.rgb!=null);
+ const requestBody=body===undefined?undefined:clone(body);
+ if(protectedOperation)await ensureNotice();
+ let result;
+ try{result=await apiRequest(path,requestBody,timeoutMs)}
+ catch(error){
+  if(!protectedOperation||error.code!=='notice_required')throw error;
+  noticeConfirmed=false;await ensureNotice();
+  result=await apiRequest(path,requestBody,timeoutMs);
+ }
+ if(result.audit_warning)await themedDialog({title:'操作已完成',message:result.audit_warning,confirmLabel:'知道了'});
+ return result;
+}
 window.addEventListener('pagehide',()=>{if(!hasBackend)return;fetch('/api/ui-close',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json','X-Aemeath-Token':token,'X-Aemeath-Client':clientId},body:'{}'}).catch(()=>{})});
 function group(){return cfg.groups[index]}
 function setDirty(){dirty=true;$('unsaved').textContent='尚未套用';$('unsaved').classList.add('dirty');updateCount()}
@@ -17,7 +54,15 @@ function updateCount(){$('selected-count').textContent=group().keys.length;for(c
 function drawLayers(){const parent=$('layers');parent.replaceChildren();cfg.groups.forEach((g,i)=>{const b=document.createElement('button');b.className='layer'+(i===index?' active':'');b.setAttribute('role','listitem');const dot=document.createElement('span');dot.className='dot';dot.style.background=g.color;dot.style.color=g.color;const text=document.createElement('span'),name=document.createElement('strong'),sub=document.createElement('small');name.textContent=g.name;sub.textContent=`${g.effect} · ${g.keys.length} 顆`;text.append(name,sub);b.append(dot,text);b.onclick=()=>{index=i;loadGroup()};parent.append(b)})}
 function loadGroup(){const g=group();$('group-name').value=g.name;$('effect').value=g.effect;$('color').value=g.color;$('color-hex').value=g.color;$('brightness').value=Math.round(g.brightness*100);$('speed').value=Math.round(g.speed*100);$('bpm').value=g.bpm||72;$('wave-width').value=Math.round((g.wave_width??.35)*100);updateFields();drawLayers();updateCount()}
 function updateFields(){const g=group();$('effect-description').textContent=descriptions[g.effect];$('brightness-value').textContent=Math.round(g.brightness*100)+'%';$('speed-value').textContent=g.speed.toFixed(1)+'×';$('bpm-value').textContent=g.bpm+' BPM';$('bpm-readout').textContent=g.bpm;$('bpm-field').classList.toggle('hidden',g.effect!=='心跳');$('speed-field').classList.toggle('hidden',['心跳','恆亮','熄滅'].includes(g.effect));$('wave-width-field').classList.toggle('hidden',g.effect!=='波浪');$('wave-width-value').textContent=Math.round((g.wave_width??.35)*100)+'%';document.querySelector('.core-heart').style.animationDuration=(60/g.bpm)+'s'}
-async function apply(notify=true){try{const result=await api('config',cfg);cfg=clone(result.config);setClean();drawLayers();if(notify)toast('已套用，這一束光屬於你。');return true}catch(e){toast(e.message);return false}}
+let configSavePending=false,settingsRevision=0;
+async function apply(notify=true){
+ if(configSavePending){toast('設定正在儲存，請稍後再試');return false}
+ const sent=clone(cfg),revision=settingsRevision;configSavePending=true;
+ try{const result=await api('config',sent);
+  if(JSON.stringify(cfg)===JSON.stringify(sent)&&settingsRevision===revision){cfg=clone(result.config);setClean();drawLayers();if(notify)toast('設定已套用');return true}
+  setDirty();toast('已保存送出時的設定；後續修改仍未儲存');return false;
+ }catch(e){toast(e.message);return false}finally{configSavePending=false}
+}
 function setTheme(){document.body.dataset.theme=cfg.settings.theme;document.body.dataset.motion=String(cfg.settings.motion)}
 function setupSettings(){for(const name of ['autostart','start_hidden','auto_effects','reconnect','motion','global_keys','hardware_master'])$('s-'+name).checked=cfg.settings[name];for(const name of ['connection','theme','fps'])$('s-'+name).value=cfg.settings[name];$('s-master').value=Math.round(cfg.settings.master*100);updateSettingsLabels();setTheme()}
 function updateSettingsLabels(){$('fps-value').textContent=$('s-fps').value+' FPS';$('master-value').textContent=$('s-master').value+'%'+($('s-hardware_master').checked&&Number($('s-master').value)>0?' → '+Math.max(1,Math.floor(Number($('s-master').value)/20+.5))+'/5 檔':'')}
@@ -65,18 +110,19 @@ function bind(){
  $('background').onclick=()=>toast(live?.tray?'關閉此分頁即可背景執行；從 Windows 系統匣重新開啟。':'關閉分頁後仍會在背景執行。再次雙擊 Launch.pyw 可重新開啟；結束請用首頁的「結束應用」。');
  const messages=['今天也有好好發光嗎？','收到你的共鳴了。','把這一束光，送給你。','心跳的頻率，剛剛好。','下一顆星，也會亮起。'];let messageIndex=0;
  $('companion').onclick=()=>{messageIndex=(messageIndex+1)%messages.length;$('companion-message').textContent=messages[messageIndex];const n=document.querySelector('.core-heart');n.animate([{transform:'scale(1)'},{transform:'scale(1.14)'},{transform:'scale(1)'}],{duration:500});};
- for(const el of document.querySelectorAll('#page-settings input:not([type=file]),#page-settings select')){if(el.closest('.color-card'))continue;el.oninput=()=>{updateSettingsLabels();$('settings-status').textContent='尚未儲存';settingsDirty=true;if(el.id==='s-theme'){cfg.settings.theme=el.value;setTheme()}};}
+ for(const el of document.querySelectorAll('#page-settings input:not([type=file]),#page-settings select')){if(el.closest('.color-card'))continue;el.oninput=()=>{updateSettingsLabels();$('settings-status').textContent='尚未儲存';settingsDirty=true;settingsRevision++;if(el.id==='s-theme'){cfg.settings.theme=el.value;setTheme()}};}
  $('save-settings').onclick=async()=>{readSettings();if(await apply(false)){$('settings-status').textContent='偏好設定已保存';settingsDirty=false;setTheme();toast('已儲存啟動與背景設定')}};
  $('quit').onclick=async()=>{if(!await themedConfirm('結束應用並停止背景燈光？'))return;try{await api('quit',{});$('disconnect').classList.remove('hidden')}catch(e){toast(e.message)}};
- $('diagnostics').onclick=async()=>{const b=$('diagnostics');b.disabled=true;b.textContent='讀取中…';try{const r=await api('diagnostics',{});$('diagnostic-output').textContent=JSON.stringify(r,null,2);$('diagnostic-output').classList.remove('hidden')}catch(e){toast(e.message)}finally{b.disabled=false;b.textContent='讀取啟動診斷'}};
- $('export-config').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(cfg,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='AEMEATH-lighting.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
- $('import-config').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>100000)return toast('設定檔過大');try{const next=JSON.parse(await f.text());if(!Array.isArray(next.groups)||!next.groups.length||next.groups.length>32)throw Error('不是有效的群組設定');for(const g of next.groups){if(!Array.isArray(g.keys)||g.keys.some(k=>!ids.includes(k))||!data.effects.includes(g.effect)||!/^#[0-9a-f]{6}$/i.test(g.color))throw Error('設定包含不支援的按鍵或效果');g.bpm=g.bpm||72}if(!await themedConfirm('匯入將取代目前群組。套用後才會保存與輸出，是否繼續？'))return;cfg.groups=next.groups;index=0;loadGroup();setDirty();toast('已匯入群組，請確認後套用')}catch(e){toast(e.message)}e.target.value=''};
+ const downloadGroups=(groups,filename)=>{const payload={version:cfg.version,groups:clone(groups)};const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+ $('export-all-config').onclick=()=>downloadGroups(cfg.groups,'AEMEATH-lighting-all.json');
+ $('export-current-config').onclick=()=>{const current=group();const safeName=current.name.replace(/[\\/:*?"<>|]/g,'-').trim()||'lighting';downloadGroups([current],`AEMEATH-lighting-${safeName}.json`)};
+ const importConfig=$('import-config');if(importConfig)importConfig.onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>100000)return toast('設定檔過大');try{const next=JSON.parse(await f.text());if(!Array.isArray(next.groups)||!next.groups.length||next.groups.length>32)throw Error('不是有效的群組設定');for(const g of next.groups){if(!Array.isArray(g.keys)||g.keys.some(k=>!ids.includes(k))||!data.effects.includes(g.effect)||!/^#[0-9a-f]{6}$/i.test(g.color))throw Error('設定包含不支援的按鍵或效果');g.bpm=g.bpm||72}if(!await themedConfirm('匯入會取代目前所有燈效方案，套用後才寫入設定，是否繼續？'))return;cfg.groups=next.groups;index=0;loadGroup();setDirty();toast('已匯入燈效方案，請確認後套用')}catch(e){toast(e.message)}e.target.value=''};
  $('wallpaper').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>2500000)return toast('請選擇 2.5 MB 以下的背景圖片');if(!['image/png','image/jpeg','image/webp'].includes(f.type))return toast('請使用 PNG、JPEG 或 WebP');const reader=new FileReader();reader.onload=()=>{try{localStorage.setItem('aemeath-wallpaper',reader.result);wallpaper(reader.result);toast('背景已保存於此瀏覽器')}catch{toast('瀏覽器儲存空間不足')}};reader.readAsDataURL(f)};
  $('clear-wallpaper').onclick=()=>{localStorage.removeItem('aemeath-wallpaper');wallpaper(null)};
- window.addEventListener('beforeunload',e=>{if(dirty||settingsDirty){e.preventDefault();e.returnValue=''}});
+ window.addEventListener('beforeunload',e=>{if(dirty||settingsDirty||(typeof schemeDirty!=='undefined'&&schemeDirty)){e.preventDefault();e.returnValue=''}});
 }
 function wallpaper(value){document.body.classList.toggle('wallpaper-on',!!value);document.querySelector('.ambient').style.backgroundImage=value?`url("${value}")`:''}
-async function sync(){if(!hasBackend||syncPending)return;syncPending=true;try{const result=await api('state',undefined,4000);if(!connected&&!dirty&&!settingsDirty&&result.config){cfg=clone(result.config);cfg.settings.autostart=result.autostart_actual;index=Math.max(0,cfg.groups.findIndex(g=>g.effect==='心跳'));loadGroup();setupSettings();setClean()}live=result;connected=true;failures=0;$('disconnect').classList.add('hidden');originTime=result.t;lastSync=performance.now();$('live-status').textContent=result.error||result.status;$('live-status').title=result.error||result.status;$('connection-label').textContent=result.preview?'預覽模式':result.connection||'未連線';document.querySelector('.connection-dot').classList.toggle('connected',!!result.connection);$('device-detail').title=`已送出 ${result.sent} 包，收到 ${result.acks} 包回覆；傳送完成不等於實際顯示成功`;$('device-detail').textContent=`${result.connection||'KA-LH-E-26001'} / ${result.fps.toFixed(1)} FPS${result.battery!==null?' / 電量 '+result.battery+'%':''}`;if(result.error&&result.error!==sync.lastError){toast(result.error);sync.lastError=result.error}localEvents=localEvents.filter(e=>now()-e[1]<2);if(result.events)localEvents=[...localEvents,...result.events].slice(-128)}catch(e){if(++failures>=3){$('disconnect').classList.remove('hidden');$('connection-label').textContent='程式未連線';document.querySelector('.connection-dot').classList.remove('connected');if(!connected){$('live-status').textContent='本機服務未連線，請重新開啟 Launch.pyw';$('live-status').title=e.message;$('device-detail').textContent='鍵盤預覽可使用；裝置操作需啟動程式'}}}finally{syncPending=false}}
+async function sync(){if(!hasBackend||syncPending)return;syncPending=true;try{const result=await api('state',undefined,4000);if(!connected&&!dirty&&!settingsDirty&&!(typeof schemeDirty!=='undefined'&&schemeDirty)&&result.config){cfg=clone(result.config);cfg.settings.autostart=result.autostart_actual;index=Math.max(0,cfg.groups.findIndex(g=>g.effect==='心跳'));loadGroup();setupSettings();setClean();window.onStudioConfigLoaded?.()}live=result;connected=true;failures=0;$('disconnect').classList.add('hidden');originTime=result.t;lastSync=performance.now();$('live-status').textContent=result.error||result.status;$('live-status').title=result.error||result.status;$('connection-label').textContent=result.preview?'預覽模式':result.connection||'未連線';document.querySelector('.connection-dot').classList.toggle('connected',!!result.connection);$('device-detail').title=`已送出 ${result.sent} 包，收到 ${result.acks} 包回覆；傳送完成不等於實際顯示成功`;$('device-detail').textContent=`${result.connection||'KA-LH-E-26001'} / ${result.fps.toFixed(1)} FPS${result.battery!==null?' / 電量 '+result.battery+'%':''}`;if(result.error&&result.error!==sync.lastError){toast(result.error);sync.lastError=result.error}localEvents=localEvents.filter(e=>now()-e[1]<2);if(result.events)localEvents=[...localEvents,...result.events].slice(-128);void promptStartupNotice()}catch(e){if(++failures>=3){connected=false;$('disconnect').classList.remove('hidden');$('connection-label').textContent='程式未連線';document.querySelector('.connection-dot').classList.remove('connected');if(!connected){$('live-status').textContent='本機服務未連線，請重新開啟 Launch.pyw';$('live-status').title=e.message;$('device-detail').textContent='鍵盤預覽可使用；裝置操作需啟動程式'}}}finally{syncPending=false}}
 function animate(stamp){if(stamp-lastPaint>=40){lastPaint=stamp;const t=now();const preview=typeof colorPreviewSettings==='function'?colorPreviewSettings():cfg.settings,frameCfg={...cfg,settings:{...preview,master:preview.master}};let colors=ResonanceVisual.render(frameCfg,keys,t,localEvents,identifying?group().keys:null),outputSettings=preview;
  if(live?.calibration){const cal=live.calibration;colors=Object.fromEntries(keys.map(k=>[k.id,cal.keys.includes(k.id)?cal.rgb.map(v=>v*(cal.brightness??1)):[0,0,0]]));outputSettings={...preview,...cal.settings,color_profiles:{}}}
  colors=ResonanceVisual.output(colors,outputSettings,live?.connection||(cfg.settings.connection==='2.4G'?'2.4G':'USB'));if(preview.hardware_master!==false&&cfg.settings.master===0)for(const k in colors)colors[k]=[0,0,0];const dark=cfg.settings.theme==='星海';for(const [id,n] of keyNodes){const rgb=colors[id];const blend=ResonanceVisual.light(rgb);n.cap.setAttribute('fill',`rgb(${blend.join(',')})`);n.led.setAttribute('fill',`rgb(${rgb.join(',')})`);n.led.setAttribute('opacity',Math.max(...rgb)>0?.9:.1);const luma=blend[0]*.2126+blend[1]*.7152+blend[2]*.0722;n.g.querySelectorAll('text').forEach(text=>text.style.fill=luma>145?'#29263b':'#f7f1ff');n.g.dataset.rgb=rgb.map(Math.round).join(',');n.g.setAttribute('aria-pressed',group().keys.includes(id)?'true':'false')}
@@ -84,13 +130,13 @@ function animate(stamp){if(stamp-lastPaint>=40){lastPaint=stamp;const t=now();co
  }requestAnimationFrame(animate)}
 async function init(){bind();drawKeyboard();loadGroup();setupSettings();setClean();try{wallpaper(localStorage.getItem('aemeath-wallpaper'))}catch{};requestAnimationFrame(animate);if(hasBackend){void sync();setInterval(sync,700)}}
 let activeThemedDialog=null;
-function themedDialog({title='確認操作',message='',input=false,value='',confirmLabel='確定',danger=false}){
+function themedDialog({title='確認操作',message='',input=false,value='',confirmLabel='確定',danger=false,notice=false}){
  if(activeThemedDialog){return Promise.resolve(null)}
  return new Promise(resolve=>{
-  const dialog=document.createElement('dialog');dialog.className='aemeath-dialog';dialog.setAttribute('aria-labelledby','aemeath-dialog-title');
+  const dialog=document.createElement('dialog');dialog.className='aemeath-dialog'+(notice?' notice-dialog':'');dialog.setAttribute('aria-labelledby','aemeath-dialog-title');
   const card=document.createElement('form');card.className='aemeath-dialog-card';card.method='dialog';
   const heading=document.createElement('h2');heading.id='aemeath-dialog-title';heading.textContent=title;
-  const copy=document.createElement('p');copy.textContent=message;card.append(heading,copy);
+  const copy=document.createElement('p');copy.textContent=message;if(notice){copy.tabIndex=0;copy.setAttribute('aria-label','使用聲明全文')}card.append(heading,copy);
   let field=null;if(input){field=document.createElement('input');field.className='aemeath-dialog-input';field.type='text';field.maxLength=40;field.value=value;field.setAttribute('aria-label',title);card.append(field)}
   const actions=document.createElement('div');actions.className='aemeath-dialog-actions';
   const cancel=document.createElement('button');cancel.type='button';cancel.className='button ghost';cancel.textContent='取消';
@@ -98,7 +144,7 @@ function themedDialog({title='確認操作',message='',input=false,value='',conf
   activeThemedDialog=dialog;let settled=false;
   const finish=result=>{if(settled)return;settled=true;ok.disabled=true;cancel.disabled=true;dialog.close();dialog.remove();activeThemedDialog=null;resolve(result)};
   cancel.onclick=()=>finish(null);dialog.addEventListener('cancel',e=>{e.preventDefault();finish(null)});card.onsubmit=e=>{e.preventDefault();finish(input?field.value:true)};
-  dialog.addEventListener('click',e=>{if(e.target===dialog)finish(null)});dialog.showModal();(field||ok).focus();
+  dialog.addEventListener('click',e=>{if(e.target===dialog)finish(null)});dialog.showModal();(notice?cancel:(field||ok)).focus();
  });
 }
 const themedConfirm=(message,options={})=>themedDialog({message,...options}).then(Boolean);

@@ -176,3 +176,10 @@ body[data-theme="星海"] #page-driver .driver-key.chosen .binding-mark{fill:#d7
 #driver-macro-panel .macro-row.delay-action{background:color-mix(in srgb,#64a8d8 12%,var(--bg))}
 #driver-macro-panel .macro-row.delay-action .macro-action-label{color:#65a8d9}
 #driver-macro-panel .macro-pair-note{margin:0;line-height:1.55}
+/* 燈效方案匯入／匯出控制。 */
+.preset-file-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-top:1px solid var(--line);margin-top:10px;padding-top:12px}
+.preset-file-actions .mini-label{margin-right:3px}
+.preset-file-actions .button{padding:7px 10px;font-size:10px}
+.preset-file-actions .import-label{margin:0}
+
+.notice-dialog{max-width:min(760px,calc(100vw - 24px))}.notice-dialog .aemeath-dialog-card{min-width:0;max-height:calc(100dvh - 32px);display:flex;flex-direction:column}.notice-dialog .aemeath-dialog-card>p{overflow:auto;min-height:0;max-height:60vh;padding-right:10px;font-size:14px}.notice-dialog .aemeath-dialog-actions{flex-wrap:wrap;flex-shrink:0}
