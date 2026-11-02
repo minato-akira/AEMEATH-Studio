@@ -59,6 +59,6 @@
 
 ## 原始碼與版本
 
-原始碼保留測試與維護文件，供開發和回歸驗證；使用者下載包只包含執行檔案、素材、授權與使用說明。檔案介紹見 [檔案用途](https://github.com/minato-akira/AEMEATH-Studio/blob/main/檔案用途.md)，歷史變更見 [CHANGELOG](https://github.com/minato-akira/AEMEATH-Studio/blob/main/CHANGELOG.md)。
+原始碼保留測試與維護文件，供開發和回歸驗證；使用者下載包只包含執行檔案、素材、授權與使用說明。歷史變更見 [CHANGELOG](https://github.com/minato-akira/AEMEATH-Studio/blob/main/CHANGELOG.md)。
 
 版本格式為「正式版序號.重大修復.小修」；開發版再加第四段測試序號。
