@@ -1,0 +1,70 @@
+name: Publish v1.0.0
+
+on:
+  push:
+    branches: [main]
+    paths: [version.py]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-v1.0.0
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      PYTHONUTF8: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check stable version and run Python tests
+        shell: pwsh
+        run: |
+          python -c "from version import APP_VERSION, APP_TEST_BUILD; assert APP_VERSION == '1.0.0' and APP_TEST_BUILD is None"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check frontend
+        shell: pwsh
+        run: |
+          Get-ChildItem web -Filter *.js | ForEach-Object {
+            node --check $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "JavaScript syntax check failed" }
+          }
+          Get-ChildItem tests -Filter *.js | ForEach-Object {
+            node $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "JavaScript regression test failed" }
+          }
+      - name: Build and verify clean archive
+        run: python scripts/build_release.py
+      - name: Publish verified v1.0.0 archive
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view v1.0.0 --json id --jq .id 2>$null
+          if ($LASTEXITCODE -eq 0) { throw "v1.0.0 already exists; refusing to overwrite a release" }
+          gh release create v1.0.0 --draft --target "$env:GITHUB_SHA" --title "AEMEATH Studio v1.0.0" --notes-file docs/releases/v1.0.0.md dist/AEMEATH-Studio-v1.0.0.zip dist/SHA256SUMS.txt
+          if ($LASTEXITCODE -ne 0) { throw "Draft release or asset upload failed" }
+          $assets = gh release view v1.0.0 --json assets | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw "Cannot verify release assets" }
+          foreach ($name in @('AEMEATH-Studio-v1.0.0.zip','SHA256SUMS.txt')) {
+            $asset = @($assets.assets | Where-Object { $_.name -eq $name })
+            if ($asset.Count -ne 1 -or $asset[0].size -ne (Get-Item -LiteralPath "dist/$name").Length) { throw "Release asset verification failed: $name" }
+          }
+          gh release edit v1.0.0 --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw "Release publication failed; draft preserved" }
