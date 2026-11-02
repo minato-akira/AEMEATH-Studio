@@ -8,7 +8,35 @@ const hasBackend=token!=='__APP_TOKEN__';const keyNodes=new Map();const ids=keys
 const descriptions={'核心資料流':'不規則光流沿垂直方向下降，各欄不依左右順序亮起。','恆亮':'溫柔地亮著，陪伴每一次敲擊。','呼吸':'整個群組一起漸亮、漸暗。','彩虹':'每顆鍵都是光譜中不同的星。','波浪':'依實體橫向位置，讓光流過按鍵。','閃爍':'俐落的亮滅節奏，可調整速度。','心跳':'主拍、次拍，再留一點舒張的寧靜。','觸鍵星光':'敲下按鍵，讓那顆星短暫發光。','星光漣漪':'以敲擊位置為中心，讓光向外擴散。','熄滅':'讓這一區安靜下來。'};
 let toastTimer;
 function toast(text){$('toast').textContent=text;$('toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('visible'),3500)}
-async function api(path,body,timeoutMs=0){if(!hasBackend)throw Error('這是靜態預覽，請執行 Launch.pyw 後操作');const options={headers:{'X-Aemeath-Token':token,'X-Aemeath-Client':clientId}},controller=timeoutMs?new AbortController():null;if(controller)options.signal=controller.signal;if(body!==undefined){options.method='POST';options.headers['Content-Type']='application/json';options.body=JSON.stringify(body)}let timer;if(controller)timer=setTimeout(()=>controller.abort(),timeoutMs);try{const response=await fetch('/api/'+path,options);const result=await response.json();if(!response.ok)throw Error(result.error||'操作失敗');return result}catch(e){if(controller&&e.name==='AbortError')throw Error('連線逾時，請確認 AEMEATH Studio 已啟動');throw e}finally{clearTimeout(timer)}}
+async function apiRequest(path,body,timeoutMs=0){if(!hasBackend)throw Error('這是靜態預覽，請執行 Launch.pyw 後操作');const options={headers:{'X-Aemeath-Token':token,'X-Aemeath-Client':clientId}},controller=timeoutMs?new AbortController():null;if(controller)options.signal=controller.signal;if(body!==undefined){options.method='POST';options.headers['Content-Type']='application/json';options.body=JSON.stringify(body)}let timer;if(controller)timer=setTimeout(()=>controller.abort(),timeoutMs);try{const response=await fetch('/api/'+path,options);const result=await response.json();if(!response.ok){const error=Error(result.error||'操作失敗');error.code=result.code;throw error}return result}catch(e){if(controller&&e.name==='AbortError')throw Error('連線逾時，請確認 AEMEATH Studio 已啟動');throw e}finally{clearTimeout(timer)}}
+let noticeConfirmed=false,noticeConfirmation=null;
+async function ensureNotice(){
+ if(noticeConfirmed)return;
+ if(noticeConfirmation)return noticeConfirmation;
+ noticeConfirmation=(async()=>{
+  const notice=await apiRequest('notice',undefined,5000);
+  if(notice.acknowledged){noticeConfirmed=true;return}
+  const accepted=await themedDialog({title:'操作風險與資料說明',message:notice.text+'\n\n確認紀錄保存在此程式資料夾；聲明變更後需重新確認。',confirmLabel:'已閱讀，繼續操作',notice:true});
+  if(!accepted){try{await apiRequest('notice/decision',{notice_sha256:notice.notice_sha256,decision:'cancelled'},5000)}catch{};throw Error('已取消，尚未執行裝置操作')}
+  await apiRequest('notice/decision',{notice_sha256:notice.notice_sha256,decision:'acknowledged'},5000);
+  noticeConfirmed=true;
+ })();
+ try{await noticeConfirmation}finally{noticeConfirmation=null}
+}
+async function api(path,body,timeoutMs=0){
+ const protectedOperation=['driver/write','driver/restore','native-lighting','start'].includes(path)||(path==='calibrate'&&body?.rgb!=null);
+ const requestBody=body===undefined?undefined:clone(body);
+ if(protectedOperation)await ensureNotice();
+ let result;
+ try{result=await apiRequest(path,requestBody,timeoutMs)}
+ catch(error){
+  if(!protectedOperation||error.code!=='notice_required')throw error;
+  noticeConfirmed=false;await ensureNotice();
+  result=await apiRequest(path,requestBody,timeoutMs);
+ }
+ if(result.audit_warning)await themedDialog({title:'操作已完成',message:result.audit_warning,confirmLabel:'知道了'});
+ return result;
+}
 window.addEventListener('pagehide',()=>{if(!hasBackend)return;fetch('/api/ui-close',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json','X-Aemeath-Token':token,'X-Aemeath-Client':clientId},body:'{}'}).catch(()=>{})});
 function group(){return cfg.groups[index]}
 function setDirty(){dirty=true;$('unsaved').textContent='尚未套用';$('unsaved').classList.add('dirty');updateCount()}
@@ -68,9 +96,10 @@ function bind(){
  for(const el of document.querySelectorAll('#page-settings input:not([type=file]),#page-settings select')){if(el.closest('.color-card'))continue;el.oninput=()=>{updateSettingsLabels();$('settings-status').textContent='尚未儲存';settingsDirty=true;if(el.id==='s-theme'){cfg.settings.theme=el.value;setTheme()}};}
  $('save-settings').onclick=async()=>{readSettings();if(await apply(false)){$('settings-status').textContent='偏好設定已保存';settingsDirty=false;setTheme();toast('已儲存啟動與背景設定')}};
  $('quit').onclick=async()=>{if(!await themedConfirm('結束應用並停止背景燈光？'))return;try{await api('quit',{});$('disconnect').classList.remove('hidden')}catch(e){toast(e.message)}};
- $('diagnostics').onclick=async()=>{const b=$('diagnostics');b.disabled=true;b.textContent='讀取中…';try{const r=await api('diagnostics',{});$('diagnostic-output').textContent=JSON.stringify(r,null,2);$('diagnostic-output').classList.remove('hidden')}catch(e){toast(e.message)}finally{b.disabled=false;b.textContent='讀取啟動診斷'}};
- $('export-config').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(cfg,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='AEMEATH-lighting.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
- $('import-config').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>100000)return toast('設定檔過大');try{const next=JSON.parse(await f.text());if(!Array.isArray(next.groups)||!next.groups.length||next.groups.length>32)throw Error('不是有效的群組設定');for(const g of next.groups){if(!Array.isArray(g.keys)||g.keys.some(k=>!ids.includes(k))||!data.effects.includes(g.effect)||!/^#[0-9a-f]{6}$/i.test(g.color))throw Error('設定包含不支援的按鍵或效果');g.bpm=g.bpm||72}if(!await themedConfirm('匯入將取代目前群組。套用後才會保存與輸出，是否繼續？'))return;cfg.groups=next.groups;index=0;loadGroup();setDirty();toast('已匯入群組，請確認後套用')}catch(e){toast(e.message)}e.target.value=''};
+ const downloadGroups=(groups,filename)=>{const payload={version:cfg.version,groups:clone(groups)};const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+ $('export-all-config').onclick=()=>downloadGroups(cfg.groups,'AEMEATH-lighting-all.json');
+ $('export-current-config').onclick=()=>{const current=group();const safeName=current.name.replace(/[\\/:*?"<>|]/g,'-').trim()||'lighting';downloadGroups([current],`AEMEATH-lighting-${safeName}.json`)};
+ const importConfig=$('import-config');if(importConfig)importConfig.onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>100000)return toast('設定檔過大');try{const next=JSON.parse(await f.text());if(!Array.isArray(next.groups)||!next.groups.length||next.groups.length>32)throw Error('不是有效的群組設定');for(const g of next.groups){if(!Array.isArray(g.keys)||g.keys.some(k=>!ids.includes(k))||!data.effects.includes(g.effect)||!/^#[0-9a-f]{6}$/i.test(g.color))throw Error('設定包含不支援的按鍵或效果');g.bpm=g.bpm||72}if(!await themedConfirm('匯入會取代目前所有燈效方案，套用後才寫入設定，是否繼續？'))return;cfg.groups=next.groups;index=0;loadGroup();setDirty();toast('已匯入燈效方案，請確認後套用')}catch(e){toast(e.message)}e.target.value=''};
  $('wallpaper').onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>2500000)return toast('請選擇 2.5 MB 以下的背景圖片');if(!['image/png','image/jpeg','image/webp'].includes(f.type))return toast('請使用 PNG、JPEG 或 WebP');const reader=new FileReader();reader.onload=()=>{try{localStorage.setItem('aemeath-wallpaper',reader.result);wallpaper(reader.result);toast('背景已保存於此瀏覽器')}catch{toast('瀏覽器儲存空間不足')}};reader.readAsDataURL(f)};
  $('clear-wallpaper').onclick=()=>{localStorage.removeItem('aemeath-wallpaper');wallpaper(null)};
  window.addEventListener('beforeunload',e=>{if(dirty||settingsDirty){e.preventDefault();e.returnValue=''}});
@@ -84,13 +113,13 @@ function animate(stamp){if(stamp-lastPaint>=40){lastPaint=stamp;const t=now();co
  }requestAnimationFrame(animate)}
 async function init(){bind();drawKeyboard();loadGroup();setupSettings();setClean();try{wallpaper(localStorage.getItem('aemeath-wallpaper'))}catch{};requestAnimationFrame(animate);if(hasBackend){void sync();setInterval(sync,700)}}
 let activeThemedDialog=null;
-function themedDialog({title='確認操作',message='',input=false,value='',confirmLabel='確定',danger=false}){
+function themedDialog({title='確認操作',message='',input=false,value='',confirmLabel='確定',danger=false,notice=false}){
  if(activeThemedDialog){return Promise.resolve(null)}
  return new Promise(resolve=>{
-  const dialog=document.createElement('dialog');dialog.className='aemeath-dialog';dialog.setAttribute('aria-labelledby','aemeath-dialog-title');
+  const dialog=document.createElement('dialog');dialog.className='aemeath-dialog'+(notice?' notice-dialog':'');dialog.setAttribute('aria-labelledby','aemeath-dialog-title');
   const card=document.createElement('form');card.className='aemeath-dialog-card';card.method='dialog';
   const heading=document.createElement('h2');heading.id='aemeath-dialog-title';heading.textContent=title;
-  const copy=document.createElement('p');copy.textContent=message;card.append(heading,copy);
+  const copy=document.createElement('p');copy.textContent=message;if(notice){copy.tabIndex=0;copy.setAttribute('aria-label','使用聲明全文')}card.append(heading,copy);
   let field=null;if(input){field=document.createElement('input');field.className='aemeath-dialog-input';field.type='text';field.maxLength=40;field.value=value;field.setAttribute('aria-label',title);card.append(field)}
   const actions=document.createElement('div');actions.className='aemeath-dialog-actions';
   const cancel=document.createElement('button');cancel.type='button';cancel.className='button ghost';cancel.textContent='取消';
@@ -98,7 +127,7 @@ function themedDialog({title='確認操作',message='',input=false,value='',conf
   activeThemedDialog=dialog;let settled=false;
   const finish=result=>{if(settled)return;settled=true;ok.disabled=true;cancel.disabled=true;dialog.close();dialog.remove();activeThemedDialog=null;resolve(result)};
   cancel.onclick=()=>finish(null);dialog.addEventListener('cancel',e=>{e.preventDefault();finish(null)});card.onsubmit=e=>{e.preventDefault();finish(input?field.value:true)};
-  dialog.addEventListener('click',e=>{if(e.target===dialog)finish(null)});dialog.showModal();(field||ok).focus();
+  dialog.addEventListener('click',e=>{if(e.target===dialog)finish(null)});dialog.showModal();(notice?cancel:(field||ok)).focus();
  });
 }
 const themedConfirm=(message,options={})=>themedDialog({message,...options}).then(Boolean);

@@ -6,6 +6,7 @@ import logging
 import math
 import os
 from pathlib import Path
+import shutil
 import threading
 import time
 import uuid
@@ -23,7 +24,120 @@ KEYS=json.loads((BASE/'keys.json').read_text(encoding='utf-8'));ORDER=[k['id'] f
 POSITIONS={k['id']:(k['x']+k['w']/2,k['y']+.5) for k in KEYS}
 HEART=[k['id'] for k in KEYS if k['heart']]
 EFFECTS=['恆亮','呼吸','彩虹','波浪','閃爍','心跳','觸鍵星光','星光漣漪','核心資料流','熄滅']
-DATA=Path(os.environ.get('LOCALAPPDATA',str(Path.home()))) / 'AEMEATH_Background'
+DATA=BASE/'data'
+LEGACY_DATA=Path(os.environ.get('LOCALAPPDATA',str(Path.home()))) / 'AEMEATH_Background'
+MIGRATION_MARKER=DATA/'.legacy-data-migrated'
+
+def migrate_legacy_data(logger=None):
+    """Move the previous per-user data folder into this package, preserving conflicts."""
+    log=logger or logging.getLogger('aemeath.storage')
+    if MIGRATION_MARKER.exists() or not LEGACY_DATA.is_dir():return False
+    DATA.mkdir(parents=True,exist_ok=True);copied=0
+    for source in sorted(LEGACY_DATA.rglob('*')):
+        if source.is_symlink() or not source.is_file():continue
+        relative=source.relative_to(LEGACY_DATA);target=DATA/relative
+        target.parent.mkdir(parents=True,exist_ok=True)
+        source_bytes=source.read_bytes()
+        if target.is_file() and target.read_bytes()==source_bytes:continue
+        if target.exists():
+            stamp=time.strftime('%Y%m%d-%H%M%S')
+            archive=DATA/'migration-conflicts'/'package-data'/relative
+            if archive.exists():archive=archive.with_name(f'{archive.name}.{stamp}')
+            archive.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(target,archive)
+            if archive.read_bytes()!=target.read_bytes():raise OSError(f'資料遷移備份驗證失敗：{archive}')
+            log.warning('資料遷移發現同名內容差異，已保留包體原檔：%s',archive)
+        temporary=target.with_name(target.name+'.migration.tmp')
+        try:
+            shutil.copy2(source,temporary)
+            if temporary.read_bytes()!=source_bytes:raise OSError(f'資料遷移副本驗證失敗：{relative}')
+            temporary.replace(target)
+        finally:
+            try:temporary.unlink(missing_ok=True)
+            except OSError:log.warning('無法清除遷移暫存檔：%s',temporary)
+        copied+=1
+    DATA.mkdir(parents=True,exist_ok=True);MIGRATION_MARKER.write_text('migrated\n',encoding='utf-8')
+    log.info('舊資料遷移完成準備：source=%s destination=%s copied=%d',LEGACY_DATA,DATA,copied)
+    return True
+
+def cleanup_legacy_data(logger=None):
+    """Remove only legacy files whose package copies have been byte-verified."""
+    log=logger or logging.getLogger('aemeath.storage')
+    if not LEGACY_DATA.is_dir():
+        DATA.mkdir(parents=True,exist_ok=True);MIGRATION_MARKER.write_text('migrated\n',encoding='utf-8');return True
+    remaining=[]
+    for source in sorted(LEGACY_DATA.rglob('*'),key=lambda p:len(p.parts),reverse=True):
+        if source.is_symlink():
+            remaining.append(source);continue
+        if source.is_file():
+            target=DATA/source.relative_to(LEGACY_DATA)
+            try:
+                if target.is_file() and target.read_bytes()==source.read_bytes():source.unlink()
+                else:remaining.append(source)
+            except OSError:remaining.append(source)
+        elif source.is_dir():
+            try:source.rmdir()
+            except OSError:pass
+    try:LEGACY_DATA.rmdir()
+    except OSError:pass
+    if LEGACY_DATA.exists():
+        log.warning('部分舊資料未能安全移除，仍保留於：%s',LEGACY_DATA)
+        return False
+    DATA.mkdir(parents=True,exist_ok=True);MIGRATION_MARKER.write_text('migrated\n',encoding='utf-8')
+    log.info('舊資料已完成驗證並移除舊位置；現行資料集中於：%s',DATA)
+    return True
+
+def migrate_legacy_logs(logger=None):
+    """Copy old package-level logs into the consolidated data folder."""
+    log=logger or logging.getLogger('aemeath.storage')
+    legacy=BASE/'logs'
+    if not legacy.is_dir():return 0
+    destination=DATA/'logs'/'previous';destination.mkdir(parents=True,exist_ok=True)
+    copied=0
+    for source in sorted(legacy.rglob('*')):
+        if source.is_symlink() or not source.is_file():continue
+        relative=source.relative_to(legacy);target=destination/relative
+        target.parent.mkdir(parents=True,exist_ok=True)
+        source_bytes=source.read_bytes()
+        if target.is_file() and target.read_bytes()==source_bytes:
+            try:source.unlink()
+            except OSError:pass
+            continue
+        if target.exists():
+            stamp=time.strftime('%Y%m%d-%H%M%S')
+            target=target.with_name(f'{target.name}.{stamp}')
+        shutil.copy2(source,target)
+        if target.read_bytes()!=source_bytes:raise OSError(f'日誌遷移副本驗證失敗：{relative}')
+        copied+=1
+    log.info('舊日誌已複製並比對：source=%s destination=%s copied=%d',legacy,destination,copied)
+    return copied
+
+def cleanup_legacy_logs(logger=None):
+    """Remove old logs only when a matching copy exists in the package data folder."""
+    log=logger or logging.getLogger('aemeath.storage')
+    legacy=BASE/'logs'
+    if not legacy.is_dir():return True
+    remaining=[]
+    for source in sorted(legacy.rglob('*'),key=lambda p:len(p.parts),reverse=True):
+        if source.is_symlink():
+            remaining.append(source);continue
+        if source.is_file():
+            target=DATA/'logs'/'previous'/source.relative_to(legacy)
+            copies=[target,*target.parent.glob(target.name+'.*')]
+            try:
+                if any(copy.is_file() and copy.read_bytes()==source.read_bytes() for copy in copies):source.unlink()
+                else:remaining.append(source)
+            except OSError:remaining.append(source)
+        elif source.is_dir():
+            try:source.rmdir()
+            except OSError:pass
+    try:legacy.rmdir()
+    except OSError:pass
+    if legacy.exists():
+        log.warning('部分舊日誌仍在使用或無法安全移除，保留於：%s',legacy)
+        return False
+    log.info('舊日誌已完成驗證並移除舊位置')
+    return True
 SETTINGS={'autostart':False,'start_hidden':False,'auto_effects':False,'reconnect':False,'connection':'自動','fps':15,'theme':'晨霧','motion':True,'global_keys':False,'master':1.0,'hardware_master':False,'color_order':'RGB','gamma':1.0,'red_gain':1.0,'green_gain':1.0,'blue_gain':1.0,'idle_minutes':0,'color_profiles':{}}
 DEFAULT={'version':6,'groups':[
  {'name':'雪色底光','keys':ORDER,'effect':'恆亮','color':'#ABB8EB','brightness':.24,'speed':.5,'bpm':72},
