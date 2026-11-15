@@ -8,11 +8,34 @@ import threading
 
 RUN_KEY=r'Software\Microsoft\Windows\CurrentVersion\Run';RUN_NAME='AEMEATHResonanceStudio'
 
+def _autostart_command_valid(command):
+    """用 Windows 規則解析登錄值，不執行命令。"""
+    if not isinstance(command,str) or not command.strip():return False
+    shell=C.WinDLL('shell32',use_last_error=True)
+    parse=shell.CommandLineToArgvW
+    parse.argtypes=[C.c_wchar_p,C.POINTER(C.c_int)]
+    parse.restype=C.POINTER(C.c_wchar_p)
+    kernel=C.WinDLL('kernel32',use_last_error=True)
+    kernel.LocalFree.argtypes=[C.c_void_p]
+    kernel.LocalFree.restype=C.c_void_p
+    count=C.c_int()
+    argv=parse(command,C.byref(count))
+    if not argv:return False
+    try:args=[argv[i] for i in range(count.value)]
+    finally:kernel.LocalFree(C.cast(argv,C.c_void_p))
+    if len(args)!=3 or args[2]!='--startup':return False
+    exe,script=map(Path,args[:2])
+    return (exe.is_absolute() and exe.is_file() and script.is_absolute()
+            and script.is_file() and script.resolve()==Path(__file__).with_name('Launch.pyw').resolve())
+
+
 def autostart_enabled():
     if sys.platform!='win32':return False
     import winreg
     try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,RUN_KEY) as key:return bool(winreg.QueryValueEx(key,RUN_NAME)[0])
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,RUN_KEY) as key:
+            command=winreg.QueryValueEx(key,RUN_NAME)[0]
+        return _autostart_command_valid(command)
     except OSError:return False
 
 def set_autostart(enabled):
@@ -25,6 +48,8 @@ def set_autostart(enabled):
             exe=Path(sys.executable).with_name('pythonw.exe')
             if not exe.exists():exe=Path(sys.executable)
             script=Path(__file__).with_name('Launch.pyw').resolve()
+            if not exe.is_file() or not script.is_file():
+                raise OSError('無法設定開機啟動：Python 或 Launch.pyw 不存在，請使用有效的 Python 重新開啟程式。')
             # 僅修改本使用者、本程式的單一 Run 值，不需要管理員權限。
             winreg.SetValueEx(key,RUN_NAME,0,winreg.REG_SZ,subprocess.list2cmdline([str(exe),str(script),'--startup']))
         else:
