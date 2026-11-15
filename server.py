@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from engine import Engine,DATA,BASE,KEYS,DEFAULT,EFFECTS,validate,migrate_legacy_data,cleanup_legacy_data,migrate_legacy_logs,cleanup_legacy_logs
 from driver import Driver
 from audit_trail import AuditTrail,NoticeRequired
-from windows_tools import Tray,autostart_enabled,set_autostart,diagnostics,global_key_loop,focus_aemeath_window,refresh_aemeath_window
+from windows_tools import Tray,autostart_status,autostart_enabled,set_autostart,diagnostics,global_key_loop,focus_aemeath_window,refresh_aemeath_window
 from version import APP_VERSION,APP_VERSION_LABEL,APP_BUILD_ID
 
 PORT=47635
@@ -217,7 +217,7 @@ def serve(no_browser=False,startup=False,preview=False):
             if path=='/api/state':
                 if not self.authorized():self.send(403,{'error':'Token denied'});return
                 mark_ui_client(self.headers.get('X-Aemeath-Client'))
-                state=engine.snapshot();state.update(tray=tray.ready,tray_error=tray.error,autostart_actual=autostart_enabled(),preview=preview,ui_active=ui_is_active(),instance=instance)
+                state=engine.snapshot();state.update(tray=tray.ready,tray_error=tray.error,autostart_actual=autostart_enabled(),autostart_status=autostart_status(),preview=preview,ui_active=ui_is_active(),instance=instance)
                 self.send(200,state);return
             if path.startswith('/api/'):self.send(404,{});return
             name='index.html' if path=='/' else urllib.parse.unquote(path.lstrip('/'))
@@ -309,7 +309,9 @@ def serve(no_browser=False,startup=False,preview=False):
             super().server_bind()
     handoff=None
     try:server=Server(('127.0.0.1',PORT),Handler)
-    except OSError:
+    except OSError as error:
+        if getattr(error,'winerror',None)==10013:
+            raise OSError(f'Windows 拒絕使用本機連接埠 {PORT}。請檢查連接埠保留或組織安全原則；不要關閉防毒或防火牆。') from error
         handoff=_resolve_existing_instance(runtime,url,no_browser,log,engine.config.get('settings',{}).get('theme','晨霧'))
         if handoff is None:return
         migrate_legacy_data(log)

@@ -1,4 +1,4 @@
-"""Build the v1.0.0 user archive from an explicit allowlist; never copy user data."""
+"""Build the v1.0.1 user archive from an explicit allowlist; never copy user data."""
 import argparse
 import hashlib
 from pathlib import Path
@@ -7,7 +7,7 @@ import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
 FILES=(
-    'Launch.pyw','server.py','engine.py','driver.py','native_lighting.py',
+    'Launch.pyw','startup_checks.py','環境與故障排除.md','server.py','engine.py','driver.py','native_lighting.py',
     'native_hid.py','protocol.py','windows_tools.py','audit_trail.py','version.py',
     'keys.json','app.ico','使用聲明.md','README.md','先讀我.txt',
     'web/index.html','web/style.css','web/ui.js','web/workspace-ui.js',
@@ -19,11 +19,11 @@ TEXT_SUFFIXES={'.py','.pyw','.json','.md','.txt','.html','.css','.js','.svg'}
 
 def build(output):
     version=runpy.run_path(str(ROOT/'version.py'))
-    if version['APP_VERSION']!='1.0.0' or version['APP_TEST_BUILD'] is not None:
-        raise ValueError('This release builder only accepts stable v1.0.0')
+    if version['APP_VERSION']!='1.0.1' or version['APP_TEST_BUILD'] is not None:
+        raise ValueError('This release builder only accepts stable v1.0.1')
     output=Path(output).resolve();output.mkdir(parents=True,exist_ok=True)
-    archive=output/'AEMEATH-Studio-v1.0.0.zip'
-    prefix='AEMEATH-Studio-v1.0.0/'
+    archive=output/'AEMEATH-Studio-v1.0.1.zip'
+    prefix='AEMEATH-Studio-v1.0.1/'
     expected={}
     for name in FILES:
         source=ROOT/name

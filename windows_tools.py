@@ -29,14 +29,29 @@ def _autostart_command_valid(command):
             and script.is_file() and script.resolve()==Path(__file__).with_name('Launch.pyw').resolve())
 
 
-def autostart_enabled():
-    if sys.platform!='win32':return False
+def autostart_status():
+    result={'enabled':False,'reason':'未設定開機啟動'}
+    if sys.platform!='win32':return dict(result,reason='僅支援 Windows')
     import winreg
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER,RUN_KEY) as key:
             command=winreg.QueryValueEx(key,RUN_NAME)[0]
-        return _autostart_command_valid(command)
-    except OSError:return False
+        if not _autostart_command_valid(command):
+            return dict(result,reason='啟動路徑失效或指向其他資料夾，請重新啟用開機啟動')
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,r'Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run') as key:
+                approval=winreg.QueryValueEx(key,RUN_NAME)[0]
+            if isinstance(approval,bytes) and len(approval)>=4 and int.from_bytes(approval[:4],'little') in (3,7):
+                return dict(result,reason='Windows 已停用此啟動項目，請到設定 → 應用程式 → 啟動，開啟 AEMEATHResonanceStudio')
+        except FileNotFoundError:pass
+        return {'enabled':True,'reason':'啟動路徑有效；實際執行仍受 Windows 原則影響'}
+    except FileNotFoundError:return result
+    except OSError:return dict(result,reason='無法讀取 Windows 開機啟動設定，請檢查帳號或組織原則')
+
+
+def autostart_enabled():
+    if sys.platform!='win32':return False
+    return autostart_status()['enabled']
 
 def set_autostart(enabled):
     if sys.platform!='win32':
@@ -52,12 +67,14 @@ def set_autostart(enabled):
                 raise OSError('無法設定開機啟動：Python 或 Launch.pyw 不存在，請使用有效的 Python 重新開啟程式。')
             # 僅修改本使用者、本程式的單一 Run 值，不需要管理員權限。
             winreg.SetValueEx(key,RUN_NAME,0,winreg.REG_SZ,subprocess.list2cmdline([str(exe),str(script),'--startup']))
+            status=autostart_status()
+            if not status['enabled']:raise OSError(status['reason'])
         else:
             try:winreg.DeleteValue(key,RUN_NAME)
             except FileNotFoundError:pass
 
 def diagnostics():
-    result={'python':sys.version,'executable':sys.executable,'platform':sys.platform,'autostart':autostart_enabled(),
+    result={'python':sys.version,'executable':sys.executable,'platform':sys.platform,'autostart':autostart_enabled(),'autostart_status':autostart_status(),
         'dependencies':'僅 Python 標準函式庫與 Windows 系統 HID DLL；無 pip、.bat 或第三方原生擴充',
         'message':'本程式不修改智慧型應用程式控制、安全原則或防毒設定。'}
     if sys.platform=='win32':

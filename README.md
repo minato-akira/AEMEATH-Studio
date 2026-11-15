@@ -1,6 +1,6 @@
 # 愛彌斯・絨雪輕歌 AEMEATH Studio
 
-**v1.0.0** · 免費、非官方的 AEMEATH KA-LH-E-26001 鍵盤控制工具。
+**v1.0.1** · 免費、非官方的 AEMEATH KA-LH-E-26001 鍵盤控制工具。
 
 在本機瀏覽器介面調整燈效、按鍵與宏。即時燈效需要程式持續執行；內建燈效與按鍵設定會寫入鍵盤。
 
@@ -18,7 +18,7 @@
 
 ## 下載與啟動
 
-1. 到 [Releases](https://github.com/minato-akira/AEMEATH-Studio/releases/latest) 下載 **`AEMEATH-Studio-v1.0.0.zip`**。
+1. 到 [Releases](https://github.com/minato-akira/AEMEATH-Studio/releases/latest) 下載 **`AEMEATH-Studio-v1.0.1.zip`**。
 2. 使用 Windows 10／11，安裝 Python 3.11 或更新版本。
 3. 完整解壓縮到可寫入的資料夾，雙擊 **`Launch.pyw`**。
 4. 閱讀操作風險與資料說明，連接鍵盤後開始設定。
@@ -62,3 +62,5 @@
 原始碼保留測試與維護文件，供開發和回歸驗證；使用者下載包只包含執行檔案、素材、授權與使用說明。歷史變更見 [CHANGELOG](https://github.com/minato-akira/AEMEATH-Studio/blob/main/CHANGELOG.md)。
 
 版本格式為「正式版序號.重大修復.小修」；開發版再加第四段測試序號。
+
+環境安裝、Python 管理器、開機啟動與連線問題請參考 [環境與故障排除](環境與故障排除.md)。

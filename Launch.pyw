@@ -13,14 +13,15 @@ try:
 except Exception:
     logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(name)s %(message)s')
 try:
+    from startup_checks import check_environment
+    check_environment(BASE)
     from server import main
     main()
 except Exception as error:
     logging.exception('應用程式啟動或主迴圈失敗')
     try:
-        import tkinter as tk
-        from tkinter import messagebox
-        root=tk.Tk();root.withdraw();messagebox.showerror('AEMEATH 啟動失敗',str(error));root.destroy()
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None,str(error)+'\n\n請參考程式旁的「環境與故障排除.md」。','AEMEATH 啟動失敗',0x10)
     except Exception:
         try:
             (LOG_DIR/'launch-error.txt').write_text(str(error),encoding='utf-8')
